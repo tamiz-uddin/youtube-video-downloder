@@ -1,2 +1,17 @@
-/node_modules
-/package-lock.json
+node_modules/
+package-lock.json
+
+# Temporary video and audio downloads
+downloads/*.mp4
+downloads/*.mp3
+downloads/*.m4a
+downloads/*.webm
+downloads/*.part
+downloads/*.ytdl
+downloads/*.temp
+
+# OS & Environment
+.DS_Store
+Thumbs.db
+*.log
+.env
