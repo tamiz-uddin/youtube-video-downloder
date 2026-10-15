@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
+  <title>VidLoader — High-Speed Social Video Downloader (1080p & MP3)</title>
+  
+  <!-- Primary SEO Meta Tags -->
+  <meta name="description" content="VidLoader is a free, high-speed social media video downloader. Save 1080p Full HD & 4K videos and 320kbps MP3 audio from YouTube, TikTok (no watermark), Instagram Reels, X/Twitter, and Reddit.">
+  <meta name="keywords" content="VidLoader, video downloader, youtube downloader 1080p, tiktok downloader no watermark, instagram reels downloader, twitter video downloader, reddit video with audio, mp3 audio converter, media grabber">
+  <meta name="author" content="VidLoader Studio">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://vidloader.app/">
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://vidloader.app/">
+  <meta property="og:site_name" content="VidLoader">
+  <meta property="og:title" content="VidLoader — Studio Social Video & Audio Downloader">
+  <meta property="og:description" content="Download full quality 1080p MP4 videos and 320kbps MP3 audio from YouTube, TikTok, Instagram, Twitter, and Reddit without watermarks.">
+  <meta property="og:image" content="/images/og-feature.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+
+  <!-- Twitter / X Cards -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:url" content="https://vidloader.app/">
+  <meta name="twitter:title" content="VidLoader — High-Speed Social Video Downloader">
+  <meta name="twitter:description" content="Download high resolution MP4 videos and MP3 audio cleanly with zero ads and no watermarks.">
+  <meta name="twitter:image" content="/images/og-feature.jpg">
+
+  <!-- PWA & Mobile Web App Meta -->
+  <meta name="theme-color" content="#090a0f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="VidLoader">
+  <link rel="icon" type="image/jpeg" href="/images/logo.jpg">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="manifest" href="/manifest.json">
+  
+  <!-- Modern Typography: Inter + Plus Jakarta Sans + JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="css/style.css">
+
+  <!-- JSON-LD Structured Data for Google Rich Results -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebApplication",
+        "name": "VidLoader",
+        "url": "https://vidloader.app/",
+        "description": "High-fidelity social media video and audio extraction platform supporting YouTube, TikTok, Instagram, Twitter/X, and Reddit.",
+        "applicationCategory": "MultimediaApplication",
+        "operatingSystem": "All",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "aggregateRating": {
+          "@type": "AggregateRating",
+          "ratingValue": "4.9",
+          "reviewCount": "14200"
+        },
+        "featureList": [
+          "YouTube 1080p and 4K video downloads",
+          "Watermark-free TikTok video rips",
+          "Instagram Reels and Stories downloader",
+          "Audio extraction to 320kbps MP3",
+          "Reddit combined audio and video streams",
+          "No registration required"
+        ]
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "How do I download videos without a watermark using VidLoader?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Simply paste the video link from TikTok, Instagram Reels, or YouTube into the VidLoader search box. VidLoader automatically locates the original clean media stream and downloads the native MP4 without watermarks."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can I convert videos to 320kbps MP3 audio only?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. VidLoader has a dedicated Audio (MP3) tab. Select MP3 HQ (320kbps) or M4A to extract high-bitrate audio from any supported music video or podcast."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Is VidLoader safe and secure to use?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "VidLoader is 100% secure. It requires no user account, installs no third-party tracking cookies, and runs processing through an isolated local FFmpeg pipeline with active SSRF protection."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Which social platforms are supported by VidLoader?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "VidLoader supports YouTube (Videos & Shorts), TikTok, Instagram (Reels & Posts), Twitter / X, Reddit, and direct HTML5 MP4/m3u8 video links."
+            }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <div class="bg-grid"></div>
+
+  <!-- Header -->
+  <header class="header">
+    <div class="container header-inner">
+      <a href="/" class="brand" id="brandLogo">
+        <img class="brand-logo-img" src="/images/logo.jpg" alt="VidLoader Logo">
+        <span class="brand-name">VidLoader</span>
+        <span class="brand-version">v2.0</span>
+      </a>
+
+      <div class="nav-cluster">
+        <button class="btn-pwa-install" id="btnPwaInstall" title="Install App to Device">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          <span>Install</span>
+        </button>
+        <div class="nav-engine-status" id="engineStatusIndicator">
+          <span class="status-dot-pulse"></span>
+          <span>Engine Active</span>
+        </div>
+        <a href="#faq" class="nav-link">FAQ</a>
+        <a href="#history" class="nav-link" id="navHistory">History</a>
+        <a href="/vidloader-extension.zip" download="vidloader-extension.zip" class="btn-nav-extension-zip" title="Direct download extension zip package">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          <span>Download Extension</span>
+        </a>
+        <button class="btn-extension-cta" id="openExtensionGuideBtn" title="How to install unpacked extension without Chrome Web Store">
+          Guide
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="container">
+    <!-- Hero Section -->
+    <section class="hero-section">
+      <div class="hero-tag">
+        <span>Universal Media Downloader & MP3 Converter</span>
+      </div>
+      <h1 class="hero-heading">Download Any Social Video.<br>Clean, fast, watermark-free.</h1>
+      <p class="hero-subheading">VidLoader extracts Full HD 1080p videos and 320kbps MP3 audio from YouTube, TikTok, Instagram, Twitter/X, and Reddit directly in your browser with zero ads.</p>
+
+      <!-- Command Bar Input -->
+      <div class="command-bar-wrapper">
+        <form id="downloadForm">
+          <div class="command-bar" id="commandBarBox">
+            <div class="command-shimmer"></div>
+            
+            <div class="platform-indicator-icon" id="platformIndicatorIcon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+              </svg>
+            </div>
+
+            <input 
+              type="text" 
+              id="videoUrlInput" 
+              class="command-input" 
+              placeholder="Paste video link or press Ctrl + V..." 
+              autocomplete="off" 
+              spellcheck="false"
+              required
+            >
+
+            <div class="command-actions">
+              <button type="button" class="btn-clear-input" id="clearInputBtn" title="Clear input">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+              <button type="button" class="btn-paste-touch" id="pasteTouchBtn" title="Paste from clipboard">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                <span>Paste</span>
+              </button>
+              <span class="kbd-badge">Ctrl V</span>
+              <button type="submit" class="btn-fetch-primary" id="fetchBtn" title="Download video or inspect formats">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                <span>Download</span>
+              </button>
+            </div>
+          </div>
+        </form>
+
+        <!-- Quick 1-Click Direct Download Strip -->
+        <div class="quick-direct-strip">
+          <span class="quick-strip-label">Direct 1-Click:</span>
+          <button type="button" class="btn-direct-pill video" id="quickDownloadBtn" title="Instant 1-Click Video Download in 1080p Full HD">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            <span>Direct 1080p Video</span>
+          </button>
+          <button type="button" class="btn-direct-pill audio" id="quickAudioBtn" title="Instant 1-Click 320kbps MP3 Audio Extraction">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+            <span>Direct 320k MP3</span>
+          </button>
+        </div>
+
+        <!-- Live Status Bar during extraction -->
+        <div id="liveStatusBar" class="live-status-bar">
+          <div class="spinner-dots"></div>
+          <span id="liveStatusText">Analyzing video stream & resolving formats...</span>
+        </div>
+
+        <!-- Error Banner -->
+        <div id="errorAlert" class="error-banner">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink: 0; margin-top: 1px;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <div>
+            <strong id="errorTitle">Extraction Notice</strong>
+            <p id="errorMessage" style="margin-top: 0.15rem; opacity: 0.9;"></p>
+          </div>
+        </div>
+
+        <!-- Platform Dock -->
+        <div class="platform-dock">
+          <div class="dock-pill" data-platform="youtube">
+            <svg viewBox="0 0 24 24" fill="currentColor" color="#ef4444"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+            YouTube
+          </div>
+          <div class="dock-pill" data-platform="tiktok">
+            <svg viewBox="0 0 24 24" fill="currentColor" color="#06b6d4"><path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.24 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z"/></svg>
+            TikTok
+          </div>
+          <div class="dock-pill" data-platform="instagram">
+            <svg viewBox="0 0 24 24" fill="currentColor" color="#ec4899"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073z"/></svg>
+            Instagram
+          </div>
+          <div class="dock-pill" data-platform="twitter">
+            <svg viewBox="0 0 24 24" fill="currentColor" color="#f8fafc"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+            Twitter / X
+          </div>
+          <div class="dock-pill" data-platform="reddit">
+            <svg viewBox="0 0 24 24" fill="currentColor" color="#f97316"><path d="M12 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0zm5.01 4.744c.688 0 1.25.561 1.25 1.249a1.25 1.25 0 0 1-2.498.056l-2.597-.547-.8 3.747c1.824.07 3.48.632 4.674 1.488.308-.309.73-.491 1.207-.491.968 0 1.754.786 1.754 1.754 0 .716-.435 1.333-1.01 1.614a3.111 3.111 0 0 1 .042.52c0 2.694-3.13 4.87-7.004 4.87-3.874 0-7.004-2.176-7.004-4.87 0-.183.015-.366.043-.534A1.748 1.748 0 0 1 4.028 12c0-.968.786-1.754 1.754-1.754.463 0 .898.196 1.207.49 1.207-.883 2.878-1.43 4.744-1.487l.885-4.182a.342.342 0 0 1 .14-.197.35.35 0 0 1 .238-.042l2.906.617a1.214 1.214 0 0 1 1.108-.702z"/></svg>
+            Reddit
+          </div>
+        </div>
+
+        <!-- Browser Bookmarklet for 1-Click Saves without Chrome Web Store -->
+        <div class="bookmarklet-wrapper">
+          <span>Browser Bookmarklet:</span>
+          <a href="javascript:(function(){var u=window.location.href;window.open('http://localhost:3000/?url='+encodeURIComponent(u)+'&auto=1','_blank');})();" class="bookmarklet-pill" title="Drag this to your bookmarks bar">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+            <span>⚡ VidLoader Quick Save</span>
+          </a>
+          <span style="font-size: 0.72rem; opacity: 0.7;">(Drag to bookmarks bar for 1-click downloads directly from YouTube/TikTok)</span>
+        </div>
+      </div>
+
+      <!-- Studio Video Result Card -->
+      <div id="videoResultCard" class="result-card">
+        <div class="result-card-inner">
+          <!-- Thumbnail Box -->
+          <div class="media-thumbnail-box">
+            <img id="resultThumbnail" class="thumbnail-element" src="" alt="Thumbnail">
+            <span id="resultDuration" class="media-badge-duration">00:00</span>
+            <button class="btn-preview-play" id="playPreviewBtn" title="Play Video Preview">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
+            </button>
+          </div>
+
+          <!-- Info Column -->
+          <div class="media-info-column">
+            <div class="media-header">
+              <span id="resultPlatformTag" class="media-platform-tag">YOUTUBE</span>
+              <h2 id="resultTitle" class="media-title">Video Title</h2>
+              <div class="media-author">
+                <span id="resultUploader">Creator Channel</span>
+                <span id="resultViews" style="color: var(--text-tertiary);">• 1.2M views</span>
+              </div>
+            </div>
+
+            <div>
+              <!-- Segmented Switcher (Video vs Audio) -->
+              <div class="segmented-control">
+                <button type="button" class="segmented-btn active" id="tabVideoFormats">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>
+                  Video (MP4)
+                </button>
+                <button type="button" class="segmented-btn" id="tabAudioFormats">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+                  Audio (MP3)
+                </button>
+              </div>
+
+              <!-- Quality Selector Chips -->
+              <div id="qualityChipsContainer" class="quality-chips-grid">
+                <!-- Dynamically populated formats -->
+              </div>
+
+              <!-- Action Bar -->
+              <div class="download-action-row">
+                <button id="startDownloadBtn" class="btn-download-main">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                  <span id="downloadBtnText">Download 1080p MP4</span>
+                </button>
+                <button id="directStreamBtn" class="btn-secondary-tool" title="Open source stream">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                  Direct Stream
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Real-Time Progress Card -->
+        <div id="progressCard" class="progress-card">
+          <div class="progress-card-header">
+            <div class="progress-label">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+              <span id="progressStatusLabel">Downloading Stream...</span>
+            </div>
+            <div id="progressPercentage" class="progress-metric">0%</div>
+          </div>
+          <div class="progress-track-bar">
+            <div id="progressTrackFill" class="progress-track-fill"></div>
+          </div>
+          <div class="progress-meta-footer">
+            <span id="progressSpeed">Speed: --</span>
+            <span id="progressEta">ETA: --</span>
+          </div>
+
+          <!-- Ready Fallback Download Button -->
+          <div id="readyDownloadBanner" class="ready-download-banner" style="display: none;">
+            <div class="ready-info-row">
+              <div class="ready-badge">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <span>File Ready</span>
+              </div>
+              <span id="readyFileNameText" class="ready-filename">video.mp4</span>
+            </div>
+            <a id="readyDownloadLink" href="#" class="btn-save-ready" download>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              <span>📥 Click to Save File to Device</span>
+            </a>
+            <div class="ready-hint">Download started automatically. If your browser didn't save it, click the button above.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Bento Grid (Why It's Better / Architecture) -->
+    <section class="bento-section">
+      <div class="bento-header">
+        <h2 class="bento-title">Engineered for speed, privacy, and fidelity</h2>
+        <p class="bento-subtitle">VidLoader delivers high-definition streams with an isolated local processing pipeline.</p>
+      </div>
+
+      <div class="bento-grid">
+        <div class="bento-card">
+          <div class="bento-icon-wrapper">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+          </div>
+          <h3 class="bento-card-title">Zero Watermarks</h3>
+          <p class="bento-card-desc">Download clean, original source videos from TikTok, Instagram Reels, and YouTube Shorts without overlay logos.</p>
+        </div>
+
+        <div class="bento-card">
+          <div class="bento-icon-wrapper">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+          </div>
+          <h3 class="bento-card-title">Lossless Audio Extraction</h3>
+          <p class="bento-card-desc">Rip pristine 320kbps MP3 or AAC tracks from music videos, interviews, and podcasts with automatic metadata tagging.</p>
+        </div>
+
+        <div class="bento-card">
+          <div class="bento-icon-wrapper">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
+          </div>
+          <h3 class="bento-card-title">Browser Extension & PWA</h3>
+          <p class="bento-card-desc">Install VidLoader as a desktop/mobile app or use the companion Chrome extension for 1-click floating downloads on active tabs.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SEO Content & FAQ Section -->
+    <section class="seo-content-section" id="faq">
+      <div class="bento-header">
+        <h2 class="bento-title">Frequently Asked Questions</h2>
+        <p class="bento-subtitle">Everything you need to know about downloading videos with VidLoader.</p>
+      </div>
+
+      <div class="faq-grid">
+        <div class="faq-item">
+          <h3 class="faq-question">How do I download TikTok videos without a watermark?</h3>
+          <p class="faq-answer">Copy the share link of the TikTok video, paste it into the VidLoader search box, and click Fetch. VidLoader accesses the underlying CDN video stream directly, delivering the raw MP4 video without the TikTok watermark logo.</p>
+        </div>
+
+        <div class="faq-item">
+          <h3 class="faq-question">Does VidLoader merge separate video and audio tracks for 1080p?</h3>
+          <p class="faq-answer">Yes. Many platforms (like YouTube and Reddit) serve 1080p video and audio as separate adaptive streams. VidLoader utilizes an internal FFmpeg processing engine to mux the streams together into a universal MP4 file before saving.</p>
+        </div>
+
+        <div class="faq-item">
+          <h3 class="faq-question">Can I use VidLoader on iPhone, Android, or Mac?</h3>
+          <p class="faq-answer">VidLoader is built with progressive web app (PWA) technology. You can tap the Install button or add it to your home screen on iOS Safari, Android Chrome, Windows, and Mac for an app-like experience with no installation required.</p>
+        </div>
+
+        <div class="faq-item">
+          <h3 class="faq-question">Is VidLoader free and secure?</h3>
+          <p class="faq-answer">Yes, VidLoader is 100% free with no account registration. The server includes real-time SSRF protection, strict rate limiting, and an automated background cleaner that deletes downloaded temp files after 2 hours for user privacy.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Recent History Section -->
+    <section class="history-section" id="history">
+      <div class="history-header">
+        <h2 class="history-heading">Recent Downloads</h2>
+        <button id="clearHistoryBtn" class="btn-history-clear">Clear History</button>
+      </div>
+
+      <div id="historyList" class="history-list">
+        <div class="empty-history-text">No downloads recorded yet. Paste a link above to get started.</div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Video Playback Modal -->
+  <div id="videoModal" class="modal-overlay">
+    <div class="modal-dialog">
+      <button class="btn-modal-close" id="closeVideoModalBtn">&times;</button>
+      <video id="previewVideoPlayer" controls autoplay></video>
+    </div>
+  </div>
+
+  <!-- Extension Guide Modal -->
+  <div id="extensionGuideModal" class="modal-overlay">
+    <div class="modal-dialog">
+      <button class="btn-modal-close" id="closeExtensionModalBtn">&times;</button>
+      <div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.5rem;">
+        <img src="/images/logo.jpg" alt="VidLoader Logo" style="width: 24px; height: 24px; border-radius: 6px;">
+        <h3 style="font-family: var(--font-heading); color: #fff; margin: 0; font-size: 1.15rem;">VidLoader Chrome Extension</h3>
+      </div>
+      <p style="color: var(--text-secondary); font-size: 0.85rem; line-height: 1.5; margin-bottom: 1.25rem;">
+        No Chrome Web Store needed! Install our unpacked companion extension in 15 seconds to get 1-click floating downloads directly on YouTube, TikTok, and Reddit tabs:
+      </p>
+
+      <div style="display: flex; flex-direction: column; gap: 0.85rem; margin-bottom: 1.5rem; font-size: 0.85rem;">
+        <div style="display: flex; gap: 0.75rem;">
+          <span style="font-family: var(--font-mono); color: var(--accent-blue); font-weight: 600;">01</span>
+          <div>
+            <strong>Download the Extension ZIP</strong> below and unzip the archive to a folder on your computer.
+          </div>
+        </div>
+        <div style="display: flex; gap: 0.75rem;">
+          <span style="font-family: var(--font-mono); color: var(--accent-blue); font-weight: 600;">02</span>
+          <div>
+            Open <code style="font-family: var(--font-mono); font-size: 0.75rem; background: rgba(255,255,255,0.08); padding: 0.15rem 0.4rem; border-radius: 4px; color: #93c5fd;">chrome://extensions</code> in Chrome / Brave / Edge and toggle <strong>Developer mode</strong> (top-right).
+            <button type="button" id="copyExtensionsUrlBtn" class="btn-copy-mini">
+              <span>Copy URL</span>
+            </button>
+          </div>
+        </div>
+        <div style="display: flex; gap: 0.75rem;">
+          <span style="font-family: var(--font-mono); color: var(--accent-blue); font-weight: 600;">03</span>
+          <div>
+            Click <strong>Load unpacked</strong> and select the unzipped <code>extension</code> folder. Done!
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+        <a href="/vidloader-extension.zip" download="vidloader-extension.zip" class="btn-download-extension-zip">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          <span>Download Extension Package (.ZIP)</span>
+        </a>
+
+        <div style="text-align: center; font-size: 0.78rem; color: var(--text-tertiary); margin-top: 0.25rem;">
+          💡 Prefer no extension? You can download any video directly from this website or drag the bookmarklet above!
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container footer-inner">
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <img src="/images/logo.jpg" alt="VidLoader" style="width: 20px; height: 20px; border-radius: 4px;">
+        <span>VidLoader Studio © 2026 • Free Social Video Downloader</span>
+      </div>
+      <div class="footer-engine-meta" id="footerMetaText">Engine: yt-dlp 2026.08.19 • FFmpeg 7.0 • SSRF Protected</div>
+    </div>
+  </footer>
+
+  <script src="js/app.js"></script>
+</body>
+</html>

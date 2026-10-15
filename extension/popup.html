@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>OmniDownloader</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-wrapper">
+    <!-- Header -->
+    <div class="popup-header">
+      <div class="brand-row">
+        <img src="icons/icon48.png" alt="VidLoader" style="width: 24px; height: 24px; border-radius: 6px;">
+        <span class="brand-title-text">VidLoader</span>
+      </div>
+      <button id="openWebDashboardBtn" class="btn-header-link" title="Open Studio Web Dashboard">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+      </button>
+    </div>
+
+    <!-- Active Tab Bar -->
+    <div class="active-tab-bar">
+      <div class="tab-indicator">
+        <span class="tab-dot"></span>
+        <span id="detectedPlatformText">Inspecting Tab...</span>
+      </div>
+      <span id="videoCountBadge" class="tab-pill">Ready</span>
+    </div>
+
+    <!-- Loader -->
+    <div id="popupLoader" class="popup-loader">
+      <div class="loader-spinner"></div>
+      <span>Extracting video details...</span>
+    </div>
+
+    <!-- Video Card -->
+    <div id="videoInfoCard" class="video-preview-row" style="display: none;">
+      <div class="preview-thumbnail-box">
+        <img id="popupThumbnail" src="" alt="Thumbnail">
+        <span id="popupDuration" class="preview-time-tag">00:00</span>
+      </div>
+      <div class="preview-meta-box">
+        <div id="popupVideoTitle" class="preview-title-text">Video Title</div>
+        <div id="popupUploader" class="preview-author-text">Channel / Creator</div>
+      </div>
+    </div>
+
+    <!-- Format Options -->
+    <div id="formatSelectorSection" style="display: none;">
+      <div class="format-toggle-row">
+        <button class="btn-format-toggle active" data-type="video" data-format="bestvideo+bestaudio/best">
+          <strong>MP4 Video</strong>
+          <small>Highest (1080p FHD)</small>
+        </button>
+        <button class="btn-format-toggle" data-type="audio" data-format="bestaudio/best">
+          <strong>MP3 Audio</strong>
+          <small>320 kbps HQ</small>
+        </button>
+      </div>
+
+      <button id="popupDownloadBtn" class="btn-popup-download">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        <span>Download Video</span>
+      </button>
+    </div>
+
+    <!-- Fallback / No Video Found -->
+    <div id="noVideoState" class="no-video-container" style="display: none;">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <p id="noVideoMsg">No media stream found on this active tab.</p>
+      <button id="pasteCustomUrlBtn" class="btn-dashboard-shortcut">Open Studio Dashboard</button>
+    </div>
+
+    <!-- Status message -->
+    <div id="popupStatusMsg" class="popup-status-toast" style="display: none;"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

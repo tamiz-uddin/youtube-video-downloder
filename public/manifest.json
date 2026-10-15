@@ -1,0 +1,30 @@
+{
+  "name": "VidLoader — Studio Video & Audio Downloader",
+  "short_name": "VidLoader",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#090a0f",
+  "theme_color": "#090a0f",
+  "description": "Download 1080p Full HD videos and 320kbps MP3 audio from YouTube, TikTok, Instagram, Twitter/X, and Reddit cleanly with zero watermarks.",
+  "categories": ["utilities", "multimedia", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
