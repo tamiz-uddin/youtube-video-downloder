@@ -1,0 +1,4 @@
+allowBuilds:
+  '@ffmpeg-installer/linux-x64': true
+minimumReleaseAgeExclude:
+  - dotenv@18.0.8

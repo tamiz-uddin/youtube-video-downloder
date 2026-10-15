@@ -29,7 +29,7 @@ A high-speed, secure, and privacy-focused **Universal Social Media Video & Audio
 ```
 vidloader/
 ├── bin/
-│   └── yt-dlp.exe                 # Extraction engine binary
+│   └── yt-dlp / yt-dlp.exe        # Extraction engine binary (Linux/macOS/Windows)
 ├── services/
 │   ├── downloader.js              # yt-dlp & FFmpeg execution wrapper
 │   ├── history.js                 # JSON history store

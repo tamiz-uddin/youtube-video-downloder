@@ -3,8 +3,69 @@ const fs = require('fs');
 const { spawn } = require('child_process');
 const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
 
-const YT_DLP_PATH = path.join(process.cwd(), 'bin', 'yt-dlp.exe');
-const FFMPEG_PATH = ffmpegInstaller.path;
+function resolveYtDlpPath() {
+  const isWindows = process.platform === 'win32';
+  const binDir = path.join(process.cwd(), 'bin');
+  if (!fs.existsSync(binDir)) {
+    try {
+      fs.mkdirSync(binDir, { recursive: true });
+    } catch (e) {}
+  }
+
+  const exePath = path.join(binDir, 'yt-dlp.exe');
+  const unixPath = path.join(binDir, 'yt-dlp');
+
+  if (isWindows) {
+    if (fs.existsSync(exePath)) return exePath;
+    if (fs.existsSync(unixPath)) return unixPath;
+    return 'yt-dlp.exe';
+  }
+
+  // Linux / macOS: check for native unix binary first
+  if (fs.existsSync(unixPath)) {
+    try {
+      fs.chmodSync(unixPath, 0o755);
+    } catch (e) {}
+    return unixPath;
+  }
+
+  // If binary missing on Unix, attempt auto-download if curl is available
+  try {
+    const { execSync } = require('child_process');
+    console.log('[VidLoader] Native yt-dlp binary missing for Linux/macOS. Downloading latest binary...');
+    execSync(`curl -L -o "${unixPath}" https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp && chmod +x "${unixPath}"`, { stdio: 'inherit' });
+    if (fs.existsSync(unixPath)) {
+      return unixPath;
+    }
+  } catch (e) {
+    console.warn('[VidLoader] Automatic yt-dlp download failed:', e.message);
+  }
+
+  // Fallback to exe if exists (e.g. Wine environment) or system PATH
+  if (fs.existsSync(exePath)) {
+    try {
+      fs.chmodSync(exePath, 0o755);
+    } catch (e) {}
+    return exePath;
+  }
+
+  return 'yt-dlp';
+}
+
+function resolveFfmpegPath() {
+  if (ffmpegInstaller && ffmpegInstaller.path && fs.existsSync(ffmpegInstaller.path)) {
+    try {
+      if (process.platform !== 'win32') {
+        fs.chmodSync(ffmpegInstaller.path, 0o755);
+      }
+    } catch (e) {}
+    return ffmpegInstaller.path;
+  }
+  return 'ffmpeg';
+}
+
+const YT_DLP_PATH = resolveYtDlpPath();
+const FFMPEG_PATH = resolveFfmpegPath();
 const DOWNLOADS_DIR = path.join(process.cwd(), 'downloads');
 
 if (!fs.existsSync(DOWNLOADS_DIR)) {
@@ -141,6 +202,7 @@ async function getVideoInfo(rawUrl) {
       '--no-check-certificates',
       '--prefer-free-formats',
       '--geo-bypass',
+      '--js-runtimes', `node:${process.execPath}`,
       '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       '--ffmpeg-location', FFMPEG_PATH
     ];
@@ -318,6 +380,7 @@ function downloadMedia({ url, formatId, isAudio, outputFilename, onProgress }) {
       '--no-warnings',
       '--no-check-certificates',
       '--newline',
+      '--js-runtimes', `node:${process.execPath}`,
       '--ffmpeg-location', FFMPEG_PATH,
       '-o', outputTemplate
     ];
