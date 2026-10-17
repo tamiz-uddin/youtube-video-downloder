@@ -146,6 +146,8 @@ app.get('/api/progress/:jobId', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
+  // Stop nginx (CloudPanel reverse proxy) from buffering the event stream
+  res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
 
   const sendEvent = (data) => {
@@ -160,19 +162,24 @@ app.get('/api/progress/:jobId', (req, res) => {
 
   sendEvent(job.progress || { status: 'initialized', percent: 0 });
 
+  const removeListener = () => {
+    const idx = job.listeners.indexOf(listener);
+    if (idx !== -1) job.listeners.splice(idx, 1);
+  };
+
   const listener = (progress) => {
+    if (res.writableEnded) return;
     sendEvent(progress);
     if (progress.status === 'completed' || progress.status === 'error') {
+      // Direct streams report 'completed' twice (stream close + job resolve); detach so the second write can't hit an ended response
+      removeListener();
       res.end();
     }
   };
 
   job.listeners.push(listener);
 
-  req.on('close', () => {
-    const idx = job.listeners.indexOf(listener);
-    if (idx !== -1) job.listeners.splice(idx, 1);
-  });
+  req.on('close', removeListener);
 });
 
 /**
@@ -214,14 +221,14 @@ app.post('/api/download/start', async (req, res) => {
       jobId,
       onProgress: (progress) => {
         job.progress = progress;
-        job.listeners.forEach(fn => fn(progress));
+        [...job.listeners].forEach(fn => fn(progress));
       }
     })
       .then((result) => {
         job.result = result;
         const completedProgress = { status: 'completed', percent: 100, fileName: result.fileName };
         job.progress = completedProgress;
-        job.listeners.forEach(fn => fn(completedProgress));
+        [...job.listeners].forEach(fn => fn(completedProgress));
 
         // Auto-cleanup job state after 5 minutes to prevent memory leak
         setTimeout(() => {
@@ -232,7 +239,7 @@ app.post('/api/download/start', async (req, res) => {
         console.error('[VidLoader] Job failed:', jobId, err.message);
         const errorProgress = { status: 'error', error: err.message };
         job.progress = errorProgress;
-        job.listeners.forEach(fn => fn(errorProgress));
+        [...job.listeners].forEach(fn => fn(errorProgress));
 
         // Auto-cleanup failed job state after 3 minutes
         setTimeout(() => {

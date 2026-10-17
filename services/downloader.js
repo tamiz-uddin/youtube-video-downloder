@@ -187,6 +187,23 @@ function isDirectMediaUrl(url) {
   return u.endsWith('.mp4') || u.endsWith('.webm') || u.endsWith('.mov') || u.endsWith('.m3u8') || u.endsWith('.mp3');
 }
 
+// YouTube player clients. android/ios bypass datacenter IP bot checks but yt-dlp skips them
+// when --cookies is passed, so cookies are only used with the web clients as a fallback.
+const YOUTUBE_DEFAULT_CLIENTS = 'youtube:player_client=android,ios,tv';
+const YOUTUBE_COOKIE_CLIENTS = 'youtube:player_client=web,mweb';
+
+function getCookiesPath() {
+  const cookiesPath = process.env.YOUTUBE_COOKIES_PATH || path.join(process.cwd(), 'cookies.txt');
+  return fs.existsSync(cookiesPath) ? cookiesPath : null;
+}
+
+/**
+ * True when a YouTube yt-dlp error indicates the video needs a signed-in session
+ */
+function isYouTubeAuthError(stderr) {
+  return /confirm your age|age[- ]restricted|inappropriate for some users|members-only|Sign in to confirm you.re not a bot|login required/i.test(stderr || '');
+}
+
 function normalizeTikWmUrl(u) {
   if (!u) return null;
   if (u.startsWith('//')) return 'https:' + u;
@@ -447,8 +464,26 @@ async function getVideoInfo(rawUrl) {
     };
   }
 
+  if (platform === 'youtube') {
+    try {
+      return await extractInfoWithYtDlp(url, platform, false);
+    } catch (err) {
+      if (!err.authRequired || !getCookiesPath()) throw err;
+      console.log(`[Extractor] YouTube requires login for ${url}. Retrying with cookies and web clients.`);
+      return extractInfoWithYtDlp(url, platform, true);
+    }
+  }
+
+  return extractInfoWithYtDlp(url, platform, true);
+}
+
+/**
+ * Run yt-dlp metadata extraction. useCookies controls whether cookies.txt is passed
+ * (and, for YouTube, switches to cookie-capable player clients).
+ */
+function extractInfoWithYtDlp(url, platform, useCookies) {
   return new Promise((resolve, reject) => {
-    console.log(`[Extractor] Starting extraction for [${platform}]: ${url}`);
+    console.log(`[Extractor] Starting extraction for [${platform}]${useCookies && platform === 'youtube' ? ' with cookies' : ''}: ${url}`);
 
     const args = [
       '--dump-single-json',
@@ -462,8 +497,9 @@ async function getVideoInfo(rawUrl) {
 
     if (platform === 'youtube') {
       args.push('--js-runtimes', `node:${process.execPath}`);
-      // Use android, ios, and tv clients - removes web/mweb which trigger GVS PO Token / bot challenge on datacenter VPS IPs
-      args.push('--extractor-args', 'youtube:player_client=android,ios,tv');
+      // android/ios/tv avoid the GVS PO Token / bot challenge on datacenter VPS IPs, but android and ios
+      // don't support cookies, so authenticated retries use the web clients instead
+      args.push('--extractor-args', useCookies ? YOUTUBE_COOKIE_CLIENTS : YOUTUBE_DEFAULT_CLIENTS);
     } else if (platform === 'tiktok') {
       // ByteDance WAF detects and blocks curl_cffi TLS impersonation with 403 or captcha
       args.push('--add-header', 'Referer:https://www.tiktok.com/');
@@ -474,8 +510,8 @@ async function getVideoInfo(rawUrl) {
     }
 
     // Support cookies for age-restricted or protected videos
-    const cookiesPath = process.env.YOUTUBE_COOKIES_PATH || path.join(process.cwd(), 'cookies.txt');
-    if (fs.existsSync(cookiesPath)) {
+    const cookiesPath = useCookies ? getCookiesPath() : null;
+    if (cookiesPath) {
       args.push('--cookies', cookiesPath);
     }
 
@@ -556,9 +592,11 @@ async function getVideoInfo(rawUrl) {
         let userMessage = 'Unable to extract media from this URL.';
         if (cleanErr.includes('Private video')) {
           userMessage = 'This video is private or removed by the creator.';
-        } else if (cleanErr.includes('Sign in to confirm you’re not a bot') || cleanErr.includes('confirm you’re not a bot')) {
+        } else if (/confirm you.re not a bot/i.test(cleanErr)) {
           userMessage = 'YouTube rate-limited server IP. Try another URL, use the Chrome Extension, or provide a cookies.txt file.';
-        } else if (cleanErr.includes('Sign in') || cleanErr.includes('age')) {
+        } else if (/page needs to be reloaded/i.test(cleanErr)) {
+          userMessage = 'YouTube rejected the request from this server. Please try again shortly.';
+        } else if (/Sign in|age[- ]restricted|confirm your age|inappropriate for some users/i.test(cleanErr)) {
           userMessage = 'This video is age-restricted or requires login.';
         } else if (cleanErr.includes('blocked from accessing') || cleanErr.includes('HTTP Error 403')) {
           userMessage = 'Platform temporarily rate-limited or blocked direct access. Try another URL or use the Chrome Extension.';
@@ -568,7 +606,9 @@ async function getVideoInfo(rawUrl) {
           userMessage = cleanErr.split('\n')[0].replace(/^ERROR:\s*/i, '');
         }
 
-        return reject(new Error(userMessage));
+        const extractError = new Error(userMessage);
+        extractError.authRequired = platform === 'youtube' && isYouTubeAuthError(cleanErr);
+        return reject(extractError);
       }
 
       hasResolved = true;
@@ -853,284 +893,295 @@ function runDownload({ url, formatId, isAudio, outputFilename, jobId, onProgress
       }
     }
 
-    const args = [
-      '--no-playlist',
-      '--socket-timeout', '15',
-      '--no-warnings',
-      '--no-check-certificates',
-      '--newline',
-      '--progress-template', 'download-progress:%(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress._percent_str)s|%(info.vcodec)s|%(info.acodec)s',
-      '--ffmpeg-location', FFMPEG_PATH,
-      '-o', outputTemplate
-    ];
+    // Runs yt-dlp; YouTube starts without cookies and retries once with them if login is required
+    const startYtDlp = (useCookies) => {
+      const args = [
+        '--no-playlist',
+        '--socket-timeout', '15',
+        '--no-warnings',
+        '--no-check-certificates',
+        '--newline',
+        '--progress-template', 'download-progress:%(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress._percent_str)s|%(info.vcodec)s|%(info.acodec)s',
+        '--ffmpeg-location', FFMPEG_PATH,
+        '-o', outputTemplate
+      ];
 
-    if (platform === 'youtube') {
-      args.push('--js-runtimes', `node:${process.execPath}`);
-      args.push('--extractor-args', 'youtube:player_client=android,ios,tv');
-    } else if (platform === 'tiktok') {
-      args.push('--add-header', 'Referer:https://www.tiktok.com/');
-      args.push('--add-header', 'User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36');
-    } else {
-      args.push('--impersonate', 'chrome');
-    }
-
-    const cookiesPath = process.env.YOUTUBE_COOKIES_PATH || path.join(process.cwd(), 'cookies.txt');
-    if (fs.existsSync(cookiesPath)) {
-      args.push('--cookies', cookiesPath);
-    }
-
-    const proxy = process.env.PROXY_URL || process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
-    if (proxy) {
-      args.push('--proxy', proxy);
-    }
-
-    if (isAudio) {
-      args.push(
-        '-x',
-        '--audio-format', finalExt,
-        '--audio-quality', '0'
-      );
-    } else {
-      args.push(
-        '-f', safeFormat && safeFormat !== 'direct' ? safeFormat : 'bestvideo+bestaudio/best',
-        '--merge-output-format', 'mp4'
-      );
-    }
-
-    // Stop option parsing before positional URL
-    args.push('--', cleanedUrl);
-
-    console.log(`[Downloader] Starting download [Job: ${safeJobId}] for: ${cleanedUrl}`);
-    const proc = spawn(YT_DLP_PATH, args, { windowsHide: true });
-    
-    if (proc.stdin) {
-      proc.stdin.end();
-    }
-
-    let resolvedPath = null;
-    let errorOutput = '';
-
-    // Multi-phase progress state trackers
-    let highestPercent = 1;
-    let currentPhase = isAudio ? 'audio' : 'video';
-    let lastKnownSpeed = '';
-    let lastKnownEta = '';
-    let lastKnownSize = '';
-
-    // Safety timeout: 15 minutes for 4K streams
-    const downloadTimer = setTimeout(() => {
-      try {
-        proc.kill('SIGTERM');
-      } catch (e) {}
-      reject(new Error('Download exceeded maximum time limit (15 minutes).'));
-    }, 15 * 60 * 1000);
-
-    proc.stdout.on('data', (chunk) => {
-      const rawText = chunk.toString();
-      const lines = rawText.split('\n');
-
-      for (let line of lines) {
-        line = line.trim();
-        if (!line) continue;
-
-        // 1. Check for FFmpeg Merger / Audio Extraction phase
-        if (line.includes('[Merger]') || line.includes('[ExtractAudio]')) {
-          currentPhase = 'muxing';
-          highestPercent = Math.max(highestPercent, 96);
-          if (onProgress) {
-            onProgress({
-              percent: Math.min(99, highestPercent),
-              phase: 'muxing',
-              phaseLabel: 'FFmpeg Studio Muxing',
-              speed: 'Processing',
-              eta: 'Finalizing',
-              size: lastKnownSize || 'Processing Container',
-              transferred: lastKnownSize || 'Merging Streams',
-              status: 'processing',
-              message: '⚡ Assembling & merging high-definition media streams...'
-            });
-          }
-          continue;
-        }
-
-        // 2. Structured progress template output from yt-dlp
-        if (line.startsWith('download-progress:')) {
-          const payload = line.replace('download-progress:', '').trim();
-          const parts = payload.split('|');
-          const downloadedBytes = parseInt(parts[0], 10) || 0;
-          const totalBytes = parseInt(parts[1], 10) || 0;
-          let speed = (parts[2] || '').trim();
-          let eta = (parts[3] || '').trim();
-          let pctStr = (parts[4] || '').replace('%', '').trim();
-          const vcodec = (parts[5] || '').trim();
-          const acodec = (parts[6] || '').trim();
-
-          const subPercent = parseFloat(pctStr) || 0;
-
-          // Determine current phase based on stream codecs
-          if (vcodec && vcodec !== 'none' && acodec === 'none') {
-            currentPhase = 'video';
-          } else if (vcodec === 'none' && acodec && acodec !== 'none') {
-            currentPhase = 'audio';
-          } else if (isAudio) {
-            currentPhase = 'audio';
-          }
-
-          // Calculate monotonic overall progress
-          let calculatedPercent = 0;
-          if (isAudio) {
-            calculatedPercent = subPercent * 0.92;
-          } else if (currentPhase === 'video') {
-            calculatedPercent = subPercent * 0.74; // Video is 0% -> 74%
-          } else if (currentPhase === 'audio') {
-            calculatedPercent = 74 + (subPercent * 0.20); // Audio is 74% -> 94%
-          } else {
-            calculatedPercent = subPercent * 0.94;
-          }
-
-          highestPercent = Math.max(highestPercent, calculatedPercent);
-
-          if (speed && speed !== 'Unknown B/s' && speed !== 'NA') {
-            lastKnownSpeed = speed;
-          }
-          if (eta && eta !== 'Unknown' && eta !== 'NA') {
-            lastKnownEta = eta;
-          }
-
-          let transferred = '';
-          if (downloadedBytes > 0 && totalBytes > 0) {
-            transferred = `${formatBytes(downloadedBytes)} / ${formatBytes(totalBytes)}`;
-            lastKnownSize = formatBytes(totalBytes);
-          } else if (downloadedBytes > 0) {
-            transferred = formatBytes(downloadedBytes);
-          }
-
-          if (onProgress) {
-            onProgress({
-              percent: Math.min(99, Math.round(highestPercent)),
-              rawPercent: Math.round(subPercent),
-              phase: currentPhase,
-              phaseLabel: currentPhase === 'audio' ? 'Downloading Audio Stream' : 'Downloading Video Stream',
-              speed: lastKnownSpeed || 'Analyzing...',
-              eta: lastKnownEta || 'Calculating...',
-              transferred: transferred || lastKnownSize || '-- / --',
-              size: lastKnownSize || '',
-              status: 'downloading'
-            });
-          }
-          continue;
-        }
-
-        // 3. Fallback standard yt-dlp line regex matcher
-        const pctMatch = line.match(/\[download\]\s+([\d.]+)%/i);
-        if (pctMatch) {
-          const subPercent = parseFloat(pctMatch[1]);
-          const sizeMatch = line.match(/of\s+~?\s*([\d.]+\s*[KMGT]?i?B)/i);
-          const speedMatch = line.match(/at\s+([\d.]+\s*[KMGT]?i?B\/s)/i);
-          const etaMatch = line.match(/ETA\s+([\d:]+)/i);
-
-          if (speedMatch && speedMatch[1]) lastKnownSpeed = speedMatch[1].trim();
-          if (etaMatch && etaMatch[1]) lastKnownEta = etaMatch[1].trim();
-          if (sizeMatch && sizeMatch[1]) lastKnownSize = sizeMatch[1].trim();
-
-          // Transition to audio if destination indicates audio track or secondary stream
-          if (line.includes('.f251.') || line.includes('.f140.') || line.includes('audio')) {
-            currentPhase = 'audio';
-          }
-
-          let calculatedPercent = isAudio ? subPercent * 0.92 : (currentPhase === 'video' ? subPercent * 0.74 : 74 + subPercent * 0.20);
-          highestPercent = Math.max(highestPercent, calculatedPercent);
-
-          if (onProgress) {
-            onProgress({
-              percent: Math.min(99, Math.round(highestPercent)),
-              rawPercent: Math.round(subPercent),
-              phase: currentPhase,
-              phaseLabel: currentPhase === 'audio' ? 'Downloading Audio Stream' : 'Downloading Video Stream',
-              speed: lastKnownSpeed || 'Optimizing...',
-              eta: lastKnownEta || 'Estimating...',
-              transferred: lastKnownSize || '--',
-              size: lastKnownSize || '',
-              status: 'downloading'
-            });
-          }
-        }
-
-        const destMatch = line.match(/\[(?:download|Merger|ExtractAudio)\] Destination:\s+(.+)$/m) ||
-                          line.match(/\[Merger\] Merging formats into "(.+)"/m);
-        if (destMatch && destMatch[1]) {
-          resolvedPath = destMatch[1].trim();
-        }
-      }
-    });
-
-    proc.stderr.on('data', (chunk) => {
-      errorOutput += chunk.toString();
-    });
-
-    proc.on('close', async (code) => {
-      clearTimeout(downloadTimer);
-      if (code === 0) {
-        if (!resolvedPath || !fs.existsSync(resolvedPath)) {
-          if (fs.existsSync(outputTemplate)) {
-            resolvedPath = outputTemplate;
-          } else {
-            const files = fs.readdirSync(DOWNLOADS_DIR);
-            // Search strictly for file prefixed with our safeJobId
-            const found = files.find(f => f.startsWith(`${safeJobId}_`));
-            if (found) {
-              resolvedPath = path.join(DOWNLOADS_DIR, found);
-            }
-          }
-        }
-        resolve({
-          filePath: resolvedPath,
-          fileName: path.basename(resolvedPath || outputTemplate),
-          fileSize: resolvedPath && fs.existsSync(resolvedPath) ? fs.statSync(resolvedPath).size : 0
-        });
+      if (platform === 'youtube') {
+        args.push('--js-runtimes', `node:${process.execPath}`);
+        args.push('--extractor-args', useCookies ? YOUTUBE_COOKIE_CLIENTS : YOUTUBE_DEFAULT_CLIENTS);
+      } else if (platform === 'tiktok') {
+        args.push('--add-header', 'Referer:https://www.tiktok.com/');
+        args.push('--add-header', 'User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36');
       } else {
-        if (platform === 'tiktok') {
-          console.warn('[Downloader] yt-dlp failed on TikTok during download. Attempting TikWM auto-recovery...');
-          try {
+        args.push('--impersonate', 'chrome');
+      }
+
+      const cookiesPath = useCookies ? getCookiesPath() : null;
+      if (cookiesPath) {
+        args.push('--cookies', cookiesPath);
+      }
+
+      const proxy = process.env.PROXY_URL || process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+      if (proxy) {
+        args.push('--proxy', proxy);
+      }
+
+      if (isAudio) {
+        args.push(
+          '-x',
+          '--audio-format', finalExt,
+          '--audio-quality', '0'
+        );
+      } else {
+        args.push(
+          '-f', safeFormat && safeFormat !== 'direct' ? safeFormat : 'bestvideo+bestaudio/best',
+          '--merge-output-format', 'mp4'
+        );
+      }
+
+      // Stop option parsing before positional URL
+      args.push('--', cleanedUrl);
+
+      console.log(`[Downloader] Starting download [Job: ${safeJobId}] for: ${cleanedUrl}`);
+      const proc = spawn(YT_DLP_PATH, args, { windowsHide: true });
+    
+      if (proc.stdin) {
+        proc.stdin.end();
+      }
+
+      let resolvedPath = null;
+      let errorOutput = '';
+
+      // Multi-phase progress state trackers
+      let highestPercent = 1;
+      let currentPhase = isAudio ? 'audio' : 'video';
+      let lastKnownSpeed = '';
+      let lastKnownEta = '';
+      let lastKnownSize = '';
+
+      // Safety timeout: 15 minutes for 4K streams
+      let timedOut = false;
+      const downloadTimer = setTimeout(() => {
+        timedOut = true;
+        try {
+          proc.kill('SIGTERM');
+        } catch (e) {}
+        reject(new Error('Download exceeded maximum time limit (15 minutes).'));
+      }, 15 * 60 * 1000);
+
+      proc.stdout.on('data', (chunk) => {
+        const rawText = chunk.toString();
+        const lines = rawText.split('\n');
+
+        for (let line of lines) {
+          line = line.trim();
+          if (!line) continue;
+
+          // 1. Check for FFmpeg Merger / Audio Extraction phase
+          if (line.includes('[Merger]') || line.includes('[ExtractAudio]')) {
+            currentPhase = 'muxing';
+            highestPercent = Math.max(highestPercent, 96);
             if (onProgress) {
               onProgress({
-                percent: 8,
-                phase: 'resolving',
-                phaseLabel: 'Auto-Recovering via High-Speed Stream',
-                speed: 'Connecting',
-                eta: 'Recovering',
-                transferred: 'Switching Stream Engine',
+                percent: Math.min(99, highestPercent),
+                phase: 'muxing',
+                phaseLabel: 'FFmpeg Studio Muxing',
+                speed: 'Processing',
+                eta: 'Finalizing',
+                size: lastKnownSize || 'Processing Container',
+                transferred: lastKnownSize || 'Merging Streams',
+                status: 'processing',
+                message: '⚡ Assembling & merging high-definition media streams...'
+              });
+            }
+            continue;
+          }
+
+          // 2. Structured progress template output from yt-dlp
+          if (line.startsWith('download-progress:')) {
+            const payload = line.replace('download-progress:', '').trim();
+            const parts = payload.split('|');
+            const downloadedBytes = parseInt(parts[0], 10) || 0;
+            const totalBytes = parseInt(parts[1], 10) || 0;
+            let speed = (parts[2] || '').trim();
+            let eta = (parts[3] || '').trim();
+            let pctStr = (parts[4] || '').replace('%', '').trim();
+            const vcodec = (parts[5] || '').trim();
+            const acodec = (parts[6] || '').trim();
+
+            const subPercent = parseFloat(pctStr) || 0;
+
+            // Determine current phase based on stream codecs
+            if (vcodec && vcodec !== 'none' && acodec === 'none') {
+              currentPhase = 'video';
+            } else if (vcodec === 'none' && acodec && acodec !== 'none') {
+              currentPhase = 'audio';
+            } else if (isAudio) {
+              currentPhase = 'audio';
+            }
+
+            // Calculate monotonic overall progress
+            let calculatedPercent = 0;
+            if (isAudio) {
+              calculatedPercent = subPercent * 0.92;
+            } else if (currentPhase === 'video') {
+              calculatedPercent = subPercent * 0.74; // Video is 0% -> 74%
+            } else if (currentPhase === 'audio') {
+              calculatedPercent = 74 + (subPercent * 0.20); // Audio is 74% -> 94%
+            } else {
+              calculatedPercent = subPercent * 0.94;
+            }
+
+            highestPercent = Math.max(highestPercent, calculatedPercent);
+
+            if (speed && speed !== 'Unknown B/s' && speed !== 'NA') {
+              lastKnownSpeed = speed;
+            }
+            if (eta && eta !== 'Unknown' && eta !== 'NA') {
+              lastKnownEta = eta;
+            }
+
+            let transferred = '';
+            if (downloadedBytes > 0 && totalBytes > 0) {
+              transferred = `${formatBytes(downloadedBytes)} / ${formatBytes(totalBytes)}`;
+              lastKnownSize = formatBytes(totalBytes);
+            } else if (downloadedBytes > 0) {
+              transferred = formatBytes(downloadedBytes);
+            }
+
+            if (onProgress) {
+              onProgress({
+                percent: Math.min(99, Math.round(highestPercent)),
+                rawPercent: Math.round(subPercent),
+                phase: currentPhase,
+                phaseLabel: currentPhase === 'audio' ? 'Downloading Audio Stream' : 'Downloading Video Stream',
+                speed: lastKnownSpeed || 'Analyzing...',
+                eta: lastKnownEta || 'Calculating...',
+                transferred: transferred || lastKnownSize || '-- / --',
+                size: lastKnownSize || '',
                 status: 'downloading'
               });
             }
-            const apiInfo = await extractTikTokViaApi(cleanedUrl);
-            const targetFormat = isAudio
-              ? (apiInfo.formats.find(f => f.type === 'audio') || apiInfo.formats[0])
-              : (apiInfo.formats.find(f => f.formatId === 'tikwm_hd') || apiInfo.formats[0]);
+            continue;
+          }
 
-            if (targetFormat && targetFormat.directUrl) {
-              const directResult = await downloadDirectStream({
-                streamUrl: targetFormat.directUrl,
-                outputTemplate,
-                isAudio,
-                jobId: safeJobId,
-                onProgress
-              });
-              return resolve(directResult);
+          // 3. Fallback standard yt-dlp line regex matcher
+          const pctMatch = line.match(/\[download\]\s+([\d.]+)%/i);
+          if (pctMatch) {
+            const subPercent = parseFloat(pctMatch[1]);
+            const sizeMatch = line.match(/of\s+~?\s*([\d.]+\s*[KMGT]?i?B)/i);
+            const speedMatch = line.match(/at\s+([\d.]+\s*[KMGT]?i?B\/s)/i);
+            const etaMatch = line.match(/ETA\s+([\d:]+)/i);
+
+            if (speedMatch && speedMatch[1]) lastKnownSpeed = speedMatch[1].trim();
+            if (etaMatch && etaMatch[1]) lastKnownEta = etaMatch[1].trim();
+            if (sizeMatch && sizeMatch[1]) lastKnownSize = sizeMatch[1].trim();
+
+            // Transition to audio if destination indicates audio track or secondary stream
+            if (line.includes('.f251.') || line.includes('.f140.') || line.includes('audio')) {
+              currentPhase = 'audio';
             }
-          } catch (recoveryErr) {
-            console.error('[Downloader] TikTok recovery download failed:', recoveryErr.message);
+
+            let calculatedPercent = isAudio ? subPercent * 0.92 : (currentPhase === 'video' ? subPercent * 0.74 : 74 + subPercent * 0.20);
+            highestPercent = Math.max(highestPercent, calculatedPercent);
+
+            if (onProgress) {
+              onProgress({
+                percent: Math.min(99, Math.round(highestPercent)),
+                rawPercent: Math.round(subPercent),
+                phase: currentPhase,
+                phaseLabel: currentPhase === 'audio' ? 'Downloading Audio Stream' : 'Downloading Video Stream',
+                speed: lastKnownSpeed || 'Optimizing...',
+                eta: lastKnownEta || 'Estimating...',
+                transferred: lastKnownSize || '--',
+                size: lastKnownSize || '',
+                status: 'downloading'
+              });
+            }
+          }
+
+          const destMatch = line.match(/\[(?:download|Merger|ExtractAudio)\] Destination:\s+(.+)$/m) ||
+                            line.match(/\[Merger\] Merging formats into "(.+)"/m);
+          if (destMatch && destMatch[1]) {
+            resolvedPath = destMatch[1].trim();
           }
         }
-        console.error('[Downloader] Exit code:', code, errorOutput);
-        reject(new Error(errorOutput.split('\n')[0] || `Download failed (exit code ${code})`));
-      }
-    });
+      });
 
-    proc.on('error', (err) => {
-      clearTimeout(downloadTimer);
-      reject(err);
-    });
+      proc.stderr.on('data', (chunk) => {
+        errorOutput += chunk.toString();
+      });
+
+      proc.on('close', async (code) => {
+        clearTimeout(downloadTimer);
+        if (code === 0) {
+          if (!resolvedPath || !fs.existsSync(resolvedPath)) {
+            if (fs.existsSync(outputTemplate)) {
+              resolvedPath = outputTemplate;
+            } else {
+              const files = fs.readdirSync(DOWNLOADS_DIR);
+              // Search strictly for file prefixed with our safeJobId
+              const found = files.find(f => f.startsWith(`${safeJobId}_`));
+              if (found) {
+                resolvedPath = path.join(DOWNLOADS_DIR, found);
+              }
+            }
+          }
+          resolve({
+            filePath: resolvedPath,
+            fileName: path.basename(resolvedPath || outputTemplate),
+            fileSize: resolvedPath && fs.existsSync(resolvedPath) ? fs.statSync(resolvedPath).size : 0
+          });
+        } else {
+          if (platform === 'youtube' && !useCookies && !timedOut && getCookiesPath() && isYouTubeAuthError(errorOutput)) {
+            console.log(`[Downloader] YouTube requires login [Job: ${safeJobId}]. Retrying with cookies and web clients.`);
+            return startYtDlp(true);
+          }
+          if (platform === 'tiktok') {
+            console.warn('[Downloader] yt-dlp failed on TikTok during download. Attempting TikWM auto-recovery...');
+            try {
+              if (onProgress) {
+                onProgress({
+                  percent: 8,
+                  phase: 'resolving',
+                  phaseLabel: 'Auto-Recovering via High-Speed Stream',
+                  speed: 'Connecting',
+                  eta: 'Recovering',
+                  transferred: 'Switching Stream Engine',
+                  status: 'downloading'
+                });
+              }
+              const apiInfo = await extractTikTokViaApi(cleanedUrl);
+              const targetFormat = isAudio
+                ? (apiInfo.formats.find(f => f.type === 'audio') || apiInfo.formats[0])
+                : (apiInfo.formats.find(f => f.formatId === 'tikwm_hd') || apiInfo.formats[0]);
+
+              if (targetFormat && targetFormat.directUrl) {
+                const directResult = await downloadDirectStream({
+                  streamUrl: targetFormat.directUrl,
+                  outputTemplate,
+                  isAudio,
+                  jobId: safeJobId,
+                  onProgress
+                });
+                return resolve(directResult);
+              }
+            } catch (recoveryErr) {
+              console.error('[Downloader] TikTok recovery download failed:', recoveryErr.message);
+            }
+          }
+          console.error('[Downloader] Exit code:', code, errorOutput);
+          reject(new Error(errorOutput.split('\n')[0] || `Download failed (exit code ${code})`));
+        }
+      });
+
+      proc.on('error', (err) => {
+        clearTimeout(downloadTimer);
+        reject(err);
+      });
+    };
+
+    startYtDlp(platform !== 'youtube');
   });
 }
 

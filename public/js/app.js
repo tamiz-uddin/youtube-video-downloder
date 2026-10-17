@@ -658,6 +658,11 @@ function listenToProgress(jobId) {
         } catch (downloadErr) {
           console.warn('[Download] Auto trigger failed:', downloadErr);
         }
+      } else {
+        try {
+          currentEventSource.close();
+        } catch (e) {}
+        showError('Download Notice', 'The file finished processing but no file name was returned. Please try again.');
       }
     } else if (data.status === 'error') {
       updateProgressUI({
