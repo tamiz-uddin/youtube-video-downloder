@@ -33,7 +33,7 @@ function resolveYtDlpPath() {
   try {
     const { execSync } = require('child_process');
     console.log('[VidLoader] Native yt-dlp binary missing for Linux/macOS. Downloading latest binary...');
-    execSync(`curl -L -o "${unixPath}" https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp && chmod +x "${unixPath}"`, { stdio: 'inherit' });
+    execSync(`curl -L -o "${unixPath}" https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux && chmod +x "${unixPath}"`, { stdio: 'inherit' });
     if (fs.existsSync(unixPath)) {
       return unixPath;
     }
@@ -116,15 +116,24 @@ function cleanUrl(rawUrl) {
   if (url.includes('youtube.com/watch') || url.includes('youtu.be/')) {
     try {
       const parsed = new URL(url);
-      // Remove playlist and search params that cause whole-playlist extraction
       parsed.searchParams.delete('list');
       parsed.searchParams.delete('index');
       parsed.searchParams.delete('pp');
       parsed.searchParams.delete('si');
       url = parsed.toString();
     } catch (e) {
-      // Fallback regex strip
       url = url.replace(/([?&])(list|index|pp|si)=[^&]+(&|$)/g, '$1').replace(/[?&]$/, '');
+    }
+  }
+
+  // Strip webapp, referral, and tracking query params from TikTok, Instagram, Twitter/X
+  if (url.includes('tiktok.com/') || url.includes('instagram.com/') || url.includes('twitter.com/') || url.includes('x.com/')) {
+    try {
+      const parsed = new URL(url);
+      parsed.search = '';
+      url = parsed.toString();
+    } catch (e) {
+      url = url.split('?')[0];
     }
   }
 
@@ -215,10 +224,21 @@ async function getVideoInfo(rawUrl) {
       '--no-warnings',
       '--no-check-certificates',
       '--geo-bypass',
-      '--js-runtimes', `node:${process.execPath}`,
-      '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       '--ffmpeg-location', FFMPEG_PATH
     ];
+
+    if (platform === 'youtube') {
+      args.push('--js-runtimes', `node:${process.execPath}`);
+      args.push('--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    } else {
+      // Impersonate modern browser TLS fingerprint for TikTok, Instagram, Twitter
+      args.push('--impersonate', 'chrome');
+    }
+
+    const proxy = process.env.PROXY_URL || process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+    if (proxy) {
+      args.push('--proxy', proxy);
+    }
 
     args.push(url);
 
@@ -449,10 +469,21 @@ function downloadMedia({ url, formatId, isAudio, outputFilename, onProgress }) {
       '--no-warnings',
       '--no-check-certificates',
       '--newline',
-      '--js-runtimes', `node:${process.execPath}`,
       '--ffmpeg-location', FFMPEG_PATH,
       '-o', outputTemplate
     ];
+
+    if (platform === 'youtube') {
+      args.push('--js-runtimes', `node:${process.execPath}`);
+      args.push('--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    } else {
+      args.push('--impersonate', 'chrome');
+    }
+
+    const proxy = process.env.PROXY_URL || process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+    if (proxy) {
+      args.push('--proxy', proxy);
+    }
 
     if (isAudio) {
       args.push(
@@ -479,6 +510,14 @@ function downloadMedia({ url, formatId, isAudio, outputFilename, onProgress }) {
     let resolvedPath = null;
     let errorOutput = '';
 
+    // Safety timeout: 15 minutes for massive 4K downloads
+    const downloadTimer = setTimeout(() => {
+      try {
+        proc.kill('SIGTERM');
+      } catch (e) {}
+      reject(new Error('Download exceeded maximum time limit (15 minutes).'));
+    }, 15 * 60 * 1000);
+
     proc.stdout.on('data', (chunk) => {
       const line = chunk.toString();
 
@@ -493,6 +532,18 @@ function downloadMedia({ url, formatId, isAudio, outputFilename, onProgress }) {
         onProgress({ percent, size, speed, eta, status: 'downloading' });
       }
 
+      // Detect FFmpeg merger / audio extraction phase
+      if ((line.includes('[Merger]') || line.includes('[ExtractAudio]')) && onProgress) {
+        onProgress({
+          percent: 99,
+          size: '',
+          speed: 'FFmpeg Muxing',
+          eta: 'Finalizing',
+          status: 'processing',
+          message: 'Processing & merging HD media streams...'
+        });
+      }
+
       const destMatch = line.match(/\[(?:download|Merger|ExtractAudio)\] Destination:\s+(.+)$/m) ||
                         line.match(/\[Merger\] Merging formats into "(.+)"/m);
       if (destMatch && destMatch[1]) {
@@ -505,6 +556,7 @@ function downloadMedia({ url, formatId, isAudio, outputFilename, onProgress }) {
     });
 
     proc.on('close', (code) => {
+      clearTimeout(downloadTimer);
       if (code === 0) {
         if (!resolvedPath || !fs.existsSync(resolvedPath)) {
           if (fs.existsSync(outputTemplate)) {
@@ -529,6 +581,7 @@ function downloadMedia({ url, formatId, isAudio, outputFilename, onProgress }) {
     });
 
     proc.on('error', (err) => {
+      clearTimeout(downloadTimer);
       reject(err);
     });
   });

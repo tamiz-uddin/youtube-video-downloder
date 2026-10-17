@@ -67,9 +67,6 @@ const readyDownloadBanner = document.getElementById('readyDownloadBanner');
 const readyDownloadLink = document.getElementById('readyDownloadLink');
 const readyFileNameText = document.getElementById('readyFileNameText');
 
-const historyList = document.getElementById('historyList');
-const clearHistoryBtn = document.getElementById('clearHistoryBtn');
-
 const videoModal = document.getElementById('videoModal');
 const previewVideoPlayer = document.getElementById('previewVideoPlayer');
 const closeVideoModalBtn = document.getElementById('closeVideoModalBtn');
@@ -514,6 +511,12 @@ function listenToProgress(jobId) {
       progressStatusLabel.textContent = `Downloading ${data.size ? '(' + data.size + ')' : ''}`;
       if (data.speed) progressSpeed.textContent = `Speed: ${data.speed}`;
       if (data.eta) progressEta.textContent = `ETA: ${data.eta}`;
+    } else if (data.status === 'processing') {
+      progressTrackFill.style.width = '99%';
+      progressPercentage.textContent = '99%';
+      progressStatusLabel.textContent = data.message || '⚡ Processing & merging HD media streams...';
+      progressSpeed.textContent = 'Muxing';
+      progressEta.textContent = 'Finalizing';
     } else if (data.status === 'completed') {
       progressTrackFill.style.width = '100%';
       progressPercentage.textContent = '100%';
@@ -540,8 +543,6 @@ function listenToProgress(jobId) {
         link.click();
         document.body.removeChild(link);
       }
-
-      loadHistory();
     } else if (data.status === 'error') {
       progressStatusLabel.textContent = 'Extraction failed';
       showError('Download Notice', data.error || 'Failed during audio/video stream muxing.');
@@ -555,68 +556,6 @@ function listenToProgress(jobId) {
     startDownloadBtn.disabled = false;
   };
 }
-
-// Fetch and Render History
-async function loadHistory() {
-  try {
-    const res = await fetch('/api/history');
-    const data = await res.json();
-
-    if (!res.ok || !data.history || data.history.length === 0) {
-      historyList.innerHTML = '<div class="empty-history-text">No downloads recorded yet. Paste a link above to get started.</div>';
-      return;
-    }
-
-    historyList.innerHTML = '';
-    data.history.forEach((item) => {
-      const el = document.createElement('div');
-      el.className = 'history-item';
-      el.innerHTML = `
-        <img class="history-thumb-img" src="${item.thumbnail || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&auto=format&fit=crop&q=80'}" alt="">
-        <div class="history-content">
-          <div class="history-item-title" title="${item.title}">${item.title}</div>
-          <div class="history-item-meta">
-            <span>${item.format}</span>
-            <span>•</span>
-            <span>${item.fileSize}</span>
-            <span>•</span>
-            <span>${(item.platform || 'video').toUpperCase()}</span>
-          </div>
-        </div>
-        <div class="history-actions">
-          <a href="${item.downloadUrl}" download="${item.fileName}" class="btn-history-icon" title="Save file">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-          </a>
-          <button class="btn-history-icon" onclick="deleteHistoryItem('${item.id}')" title="Remove">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-          </button>
-        </div>
-      `;
-      historyList.appendChild(el);
-    });
-  } catch (err) {
-    console.error('Failed to load history:', err);
-  }
-}
-
-window.deleteHistoryItem = async (id) => {
-  try {
-    await fetch(`/api/history/${id}`, { method: 'DELETE' });
-    loadHistory();
-  } catch (err) {
-    console.error('Failed to delete history item:', err);
-  }
-};
-
-clearHistoryBtn.addEventListener('click', async () => {
-  if (!confirm('Clear all recent downloads?')) return;
-  try {
-    await fetch('/api/history/clear', { method: 'POST' });
-    loadHistory();
-  } catch (err) {
-    console.error('Failed to clear history:', err);
-  }
-});
 
 // Video Modal Player
 function openPreviewModal(streamUrl) {
@@ -760,6 +699,3 @@ if (targetQueryUrl) {
     fetchVideoMetadata(targetQueryUrl);
   }
 }
-
-// Initial Run
-loadHistory();

@@ -3,7 +3,7 @@
  * Caches static shell assets while passing API and media downloads to the network
  */
 
-const CACHE_NAME = 'omnidownloader-v1';
+const CACHE_NAME = 'vidloader-v2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

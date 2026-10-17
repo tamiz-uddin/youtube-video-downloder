@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -11,30 +12,40 @@ const {
   FFMPEG_PATH,
   DOWNLOADS_DIR
 } = require('./services/downloader');
-const historyService = require('./services/history');
 const { isSafeUrl, rateLimiter, startDiskCleanup } = require('./services/security');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = parseInt(process.env.PORT, 10) || 3000;
+const HOST = process.env.HOST || '0.0.0.0';
 
-// Security Headers Middleware
+// Enable trust proxy for reverse proxies (Nginx, Cloudflare, Docker, K8s)
+app.set('trust proxy', 1);
+
+// Production Security Headers
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   next();
 });
 
 // Middleware
-app.use(cors({ origin: '*' }));
+const allowedOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map(o => o.trim()) : '*';
+app.use(cors({ origin: allowedOrigins }));
 app.use(express.json({ limit: '1mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+
+// Static file serving with caching
+app.use(express.static(path.join(__dirname, 'public'), {
+  maxAge: process.env.NODE_ENV === 'production' ? '1d' : 0,
+  etag: true
+}));
 
 // Rate Limiter applied to API routes
 app.use('/api/', rateLimiter(40, 60 * 1000));
 
-// Safe Static File Delivery with Auto-Purge after browser download
+// Safe Static File Delivery with safe deferred purge
 app.get('/files/:filename', (req, res) => {
   const safeFilename = path.basename(req.params.filename);
   const filePath = path.join(DOWNLOADS_DIR, safeFilename);
@@ -45,7 +56,7 @@ app.get('/files/:filename', (req, res) => {
 
   res.download(filePath, safeFilename, (err) => {
     if (!err) {
-      // Automatically purge the temporary server file 10s after sending to client
+      // Grace period (5 mins) before purging so user download completes without truncation
       setTimeout(() => {
         try {
           if (fs.existsSync(filePath)) {
@@ -53,16 +64,26 @@ app.get('/files/:filename', (req, res) => {
             console.log(`[AutoPurge] 🧹 Purged temporary server file: ${safeFilename}`);
           }
         } catch (e) {}
-      }, 10000);
+      }, 5 * 60 * 1000);
     }
   });
 });
 
-// In-memory active download jobs tracking
+// In-memory active download jobs tracking with memory leak prevention
 const activeJobs = new Map();
 
-// Start background auto-cleanup for files older than 2 hours
-startDiskCleanup(DOWNLOADS_DIR);
+// Periodic sweep for abandoned active jobs older than 15 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, job] of activeJobs.entries()) {
+    if (job.createdAt && now - job.createdAt > 15 * 60 * 1000) {
+      activeJobs.delete(id);
+    }
+  }
+}, 5 * 60 * 1000);
+
+// Start background auto-cleanup for temp media files older than 15 minutes
+startDiskCleanup(DOWNLOADS_DIR, 15 * 60 * 1000);
 
 /**
  * Health check & diagnostic status
@@ -149,11 +170,11 @@ app.get('/api/progress/:jobId', (req, res) => {
 });
 
 /**
- * Start a download job
+ * Start a download job (Zero-log, ephemeral)
  */
 app.post('/api/download/start', async (req, res) => {
   try {
-    const { url, formatId, title, isAudio, thumbnail, platform } = req.body;
+    const { url, formatId, title, isAudio } = req.body;
 
     const check = isSafeUrl(url);
     if (!check.safe) {
@@ -173,7 +194,8 @@ app.post('/api/download/start', async (req, res) => {
       title: safeTitle,
       isAudio: !!isAudio,
       progress: { status: 'starting', percent: 0, speed: '', eta: '', size: '' },
-      listeners: []
+      listeners: [],
+      createdAt: Date.now()
     };
 
     activeJobs.set(jobId, job);
@@ -194,22 +216,21 @@ app.post('/api/download/start', async (req, res) => {
         job.progress = completedProgress;
         job.listeners.forEach(fn => fn(completedProgress));
 
-        historyService.addHistoryItem({
-          title: safeTitle || result.fileName,
-          url: check.cleanUrl,
-          format: isAudio ? 'MP3' : 'MP4',
-          fileName: result.fileName,
-          fileSize: formatBytes(result.fileSize),
-          thumbnail: thumbnail || null,
-          platform: platform || identifyPlatform(check.cleanUrl),
-          downloadUrl: `/files/${encodeURIComponent(result.fileName)}`
-        });
+        // Auto-cleanup job state after 5 minutes to prevent memory leak
+        setTimeout(() => {
+          activeJobs.delete(jobId);
+        }, 5 * 60 * 1000);
       })
       .catch((err) => {
         console.error('[VidLoader] Job failed:', jobId, err.message);
         const errorProgress = { status: 'error', error: err.message };
         job.progress = errorProgress;
         job.listeners.forEach(fn => fn(errorProgress));
+
+        // Auto-cleanup failed job state after 3 minutes
+        setTimeout(() => {
+          activeJobs.delete(jobId);
+        }, 3 * 60 * 1000);
       });
 
     res.json({ success: true, jobId });
@@ -255,7 +276,7 @@ app.get('/api/download/stream', async (req, res) => {
             console.log(`[AutoPurge] 🧹 Purged temporary stream file: ${result.fileName}`);
           }
         } catch (e) {}
-      }, 5000);
+      }, 5 * 60 * 1000);
     });
   } catch (err) {
     console.error('[VidLoader] Direct download error:', err.message);
@@ -263,28 +284,37 @@ app.get('/api/download/stream', async (req, res) => {
   }
 });
 
-/**
- * History endpoints
- */
-app.get('/api/history', (req, res) => {
-  res.json({ success: true, history: historyService.getHistory() });
-});
-
-app.delete('/api/history/:id', (req, res) => {
-  const safeId = (req.params.id || '').replace(/[^a-zA-Z0-9_-]/g, '');
-  const success = historyService.removeHistoryItem(safeId);
-  res.json({ success });
-});
-
-app.post('/api/history/clear', (req, res) => {
-  const success = historyService.clearHistory();
-  res.json({ success });
-});
-
-app.listen(PORT, () => {
+// Start Express Server
+const server = app.listen(PORT, HOST, () => {
   console.log(`===============================================`);
-  console.log(`  ⚡ VidLoader Studio Server online on port ${PORT}`);
-  console.log(`  🌐 Web App:    http://localhost:${PORT}`);
+  console.log(`  ⚡ VidLoader Studio Server online`);
+  console.log(`  🌐 Web App:    http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
   console.log(`  🛡️ Security:   SSRF Protection & Rate Limiting ACTIVE`);
+  console.log(`  🔒 Mode:       Zero-log Ephemeral (Production Ready)`);
   console.log(`===============================================`);
+});
+
+// Process signal handling & Graceful Shutdown
+function gracefulShutdown(signal) {
+  console.log(`\n[Server] Received ${signal}. Closing server gracefully...`);
+  server.close(() => {
+    console.log('[Server] HTTP connections closed. Process terminating.');
+    process.exit(0);
+  });
+  // Force kill if lingering after 10s
+  setTimeout(() => {
+    console.error('[Server] Could not close connections in time, forcefully shutting down');
+    process.exit(1);
+  }, 10000);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[Server] Unhandled Rejection:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[Server] Uncaught Exception:', err);
 });

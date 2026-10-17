@@ -69,9 +69,13 @@ function isSafeUrl(rawUrl) {
  */
 const rateLimitMap = new Map();
 
-function rateLimiter(maxRequests = 30, windowMs = 60 * 1000) {
+function rateLimiter(maxRequests = 40, windowMs = 60 * 1000) {
   return (req, res, next) => {
-    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+    const rawForwarded = req.headers['x-forwarded-for'];
+    const ip = (rawForwarded ? rawForwarded.split(',')[0].trim() : null) ||
+               req.ip ||
+               (req.socket ? req.socket.remoteAddress : null) ||
+               'unknown';
     const now = Date.now();
 
     const record = rateLimitMap.get(ip) || { count: 0, resetTime: now + windowMs };
@@ -108,7 +112,6 @@ function startDiskCleanup(downloadsDir, maxAgeMs = 15 * 60 * 1000) {
       const now = Date.now();
 
       files.forEach((file) => {
-        if (file === 'history.json') return; // Preserve history file
         const fullPath = path.join(downloadsDir, file);
         try {
           const stats = fs.statSync(fullPath);
