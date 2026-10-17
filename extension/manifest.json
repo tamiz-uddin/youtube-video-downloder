@@ -18,7 +18,8 @@
     "*://*.twitter.com/*",
     "*://*.x.com/*",
     "*://*.reddit.com/*",
-    "http://localhost:3000/*"
+    "http://*/*",
+    "https://*/*"
   ],
   "action": {
     "default_popup": "popup.html",

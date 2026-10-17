@@ -2,10 +2,16 @@
   "name": "vidloader",
   "version": "2.0.0",
   "description": "High-Speed Social Media Video & Audio Downloader Suite",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "pm2:start": "pm2 start ecosystem.config.js --env production",
+    "pm2:stop": "pm2 stop vidloader-studio",
+    "pm2:restart": "pm2 restart vidloader-studio",
+    "pm2:reload": "pm2 reload vidloader-studio",
+    "pm2:logs": "pm2 logs vidloader-studio",
+    "pm2:status": "pm2 status"
   },
   "keywords": [],
   "author": "",
@@ -13,7 +19,6 @@
   "type": "commonjs",
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
-    "axios": "^1.20.0",
     "cors": "^2.8.6",
     "dotenv": "^18.0.8",
     "express": "^5.3.0"

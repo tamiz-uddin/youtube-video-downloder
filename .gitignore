@@ -2,16 +2,16 @@ node_modules/
 package-lock.json
 
 # Temporary video and audio downloads
-downloads/*.mp4
-downloads/*.mp3
-downloads/*.m4a
-downloads/*.webm
-downloads/*.part
-downloads/*.ytdl
-downloads/*.temp
+downloads/*
+!downloads/.gitkeep
+
+# Process logs
+logs/*
+!logs/.gitkeep
+*.log
 
 # OS & Environment
 .DS_Store
 Thumbs.db
-*.log
 .env
+.env.local

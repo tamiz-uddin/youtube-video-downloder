@@ -504,7 +504,13 @@ function listenToProgress(jobId) {
   currentEventSource.onmessage = (event) => {
     const data = JSON.parse(event.data);
 
-    if (data.status === 'downloading') {
+    if (data.status === 'queued') {
+      progressTrackFill.style.width = '10%';
+      progressPercentage.textContent = 'Queue';
+      progressStatusLabel.textContent = data.message || `Server busy. Queued (position #${data.queuePosition || 1})...`;
+      progressSpeed.textContent = 'Queued';
+      progressEta.textContent = 'Waiting slot';
+    } else if (data.status === 'downloading') {
       const pct = Math.round(data.percent || 0);
       progressTrackFill.style.width = `${pct}%`;
       progressPercentage.textContent = `${pct}%`;

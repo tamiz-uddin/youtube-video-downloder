@@ -96,7 +96,10 @@ function identifyPlatform(url) {
   if (u.includes('tiktok.com')) return 'tiktok';
   if (u.includes('instagram.com')) return 'instagram';
   if (u.includes('twitter.com') || u.includes('x.com')) return 'twitter';
-  if (u.includes('reddit.com')) return 'reddit';
+  if (u.includes('reddit.com') || u.includes('redd.it')) return 'reddit';
+  if (u.includes('facebook.com') || u.includes('fb.watch')) return 'facebook';
+  if (u.includes('threads.net')) return 'threads';
+  if (u.includes('pinterest.com') || u.includes('pin.it')) return 'pinterest';
   return 'generic';
 }
 
@@ -138,6 +141,15 @@ function cleanUrl(rawUrl) {
   }
 
   return url;
+}
+
+/**
+ * Sanitize formatId string to prevent argument tampering
+ */
+function sanitizeFormatId(rawFormatId) {
+  if (!rawFormatId || typeof rawFormatId !== 'string') return null;
+  const cleaned = rawFormatId.replace(/[^a-zA-Z0-9_+/[\]<=.: -]/g, '').trim().slice(0, 80);
+  return cleaned.length > 0 ? cleaned : null;
 }
 
 /**
@@ -240,7 +252,8 @@ async function getVideoInfo(rawUrl) {
       args.push('--proxy', proxy);
     }
 
-    args.push(url);
+    // Explicit '--' stops option parsing so user URL is never treated as a flag
+    args.push('--', url);
 
     let stdout = '';
     let stderr = '';
@@ -248,7 +261,6 @@ async function getVideoInfo(rawUrl) {
 
     const proc = spawn(YT_DLP_PATH, args, { windowsHide: true });
 
-    // End stdin immediately so child process never waits for input
     if (proc.stdin) {
       proc.stdin.end();
     }
@@ -277,8 +289,6 @@ async function getVideoInfo(rawUrl) {
       if (hasResolved) return;
       hasResolved = true;
       clearTimeout(timer);
-
-      console.log(`[Extractor] Process exited with code ${code}. Stdout len: ${stdout.length}`);
 
       if (code !== 0 || !stdout.trim()) {
         const cleanErr = (stderr || '').trim();
@@ -449,19 +459,58 @@ async function getVideoInfo(rawUrl) {
   });
 }
 
+// Concurrency Queue Management
+const MAX_CONCURRENT_DOWNLOADS = parseInt(process.env.MAX_CONCURRENT_DOWNLOADS, 10) || 3;
+let activeDownloadCount = 0;
+const downloadQueue = [];
+
+function updateQueuePositions() {
+  downloadQueue.forEach((item, idx) => {
+    if (item.onProgress) {
+      item.onProgress({
+        status: 'queued',
+        percent: 0,
+        queuePosition: idx + 1,
+        message: `Queued (position #${idx + 1} of ${downloadQueue.length})...`
+      });
+    }
+  });
+}
+
+function processNextDownload() {
+  if (activeDownloadCount >= MAX_CONCURRENT_DOWNLOADS || downloadQueue.length === 0) {
+    return;
+  }
+
+  const nextJob = downloadQueue.shift();
+  updateQueuePositions();
+  activeDownloadCount++;
+
+  runDownload(nextJob.params)
+    .then(nextJob.resolve)
+    .catch(nextJob.reject)
+    .finally(() => {
+      activeDownloadCount--;
+      processNextDownload();
+    });
+}
+
 /**
- * Execute download with yt-dlp and report progress
+ * Execute download execution helper
  */
-function downloadMedia({ url, formatId, isAudio, outputFilename, onProgress }) {
+function runDownload({ url, formatId, isAudio, outputFilename, jobId, onProgress }) {
   const cleanedUrl = cleanUrl(url);
   const platform = identifyPlatform(cleanedUrl);
+  const safeJobId = (jobId || 'job_' + Date.now()).replace(/[^a-zA-Z0-9_-]/g, '');
 
   return new Promise((resolve, reject) => {
     const finalExt = isAudio ? (formatId && formatId.includes('mp3') ? 'mp3' : 'm4a') : 'mp4';
     const cleanName = (outputFilename || `video_${Date.now()}`)
       .replace(/[/\\?%*:|"<>]/g, '_')
-      .slice(0, 80);
-    const outputTemplate = path.join(DOWNLOADS_DIR, `${cleanName}_${Date.now()}.${finalExt}`);
+      .slice(0, 60);
+
+    // Embed unique jobId directly in file template to eliminate race condition file conflicts
+    const outputTemplate = path.join(DOWNLOADS_DIR, `${safeJobId}_${cleanName}.${finalExt}`);
 
     const args = [
       '--no-playlist',
@@ -485,6 +534,8 @@ function downloadMedia({ url, formatId, isAudio, outputFilename, onProgress }) {
       args.push('--proxy', proxy);
     }
 
+    const safeFormat = sanitizeFormatId(formatId);
+
     if (isAudio) {
       args.push(
         '-x',
@@ -493,14 +544,15 @@ function downloadMedia({ url, formatId, isAudio, outputFilename, onProgress }) {
       );
     } else {
       args.push(
-        '-f', formatId && formatId !== 'direct' ? formatId : 'bestvideo+bestaudio/best',
+        '-f', safeFormat && safeFormat !== 'direct' ? safeFormat : 'bestvideo+bestaudio/best',
         '--merge-output-format', 'mp4'
       );
     }
 
-    args.push(cleanedUrl);
+    // Stop option parsing before positional URL
+    args.push('--', cleanedUrl);
 
-    console.log(`[Downloader] Starting download for: ${cleanedUrl}`);
+    console.log(`[Downloader] Starting download [Job: ${safeJobId}] for: ${cleanedUrl}`);
     const proc = spawn(YT_DLP_PATH, args, { windowsHide: true });
     
     if (proc.stdin) {
@@ -510,7 +562,7 @@ function downloadMedia({ url, formatId, isAudio, outputFilename, onProgress }) {
     let resolvedPath = null;
     let errorOutput = '';
 
-    // Safety timeout: 15 minutes for massive 4K downloads
+    // Safety timeout: 15 minutes for 4K streams
     const downloadTimer = setTimeout(() => {
       try {
         proc.kill('SIGTERM');
@@ -563,7 +615,8 @@ function downloadMedia({ url, formatId, isAudio, outputFilename, onProgress }) {
             resolvedPath = outputTemplate;
           } else {
             const files = fs.readdirSync(DOWNLOADS_DIR);
-            const found = files.find(f => f.startsWith(cleanName));
+            // Search strictly for file prefixed with our safeJobId
+            const found = files.find(f => f.startsWith(`${safeJobId}_`));
             if (found) {
               resolvedPath = path.join(DOWNLOADS_DIR, found);
             }
@@ -587,13 +640,67 @@ function downloadMedia({ url, formatId, isAudio, outputFilename, onProgress }) {
   });
 }
 
+/**
+ * Public queue-managed downloadMedia function
+ */
+function downloadMedia(params) {
+  return new Promise((resolve, reject) => {
+    if (activeDownloadCount < MAX_CONCURRENT_DOWNLOADS) {
+      activeDownloadCount++;
+      runDownload(params)
+        .then(resolve)
+        .catch(reject)
+        .finally(() => {
+          activeDownloadCount--;
+          processNextDownload();
+        });
+    } else {
+      // Queue job and notify listener
+      downloadQueue.push({ params, resolve, reject, onProgress: params.onProgress });
+      const pos = downloadQueue.length;
+      if (params.onProgress) {
+        params.onProgress({
+          status: 'queued',
+          percent: 0,
+          queuePosition: pos,
+          message: `Server busy. Queued (position #${pos})...`
+        });
+      }
+    }
+  });
+}
+
+/**
+ * Check and run yt-dlp self-update
+ */
+async function updateYtDlp() {
+  return new Promise((resolve) => {
+    try {
+      const proc = spawn(YT_DLP_PATH, ['-U'], { windowsHide: true });
+      let output = '';
+      proc.stdout.on('data', d => output += d.toString());
+      proc.stderr.on('data', d => output += d.toString());
+      proc.on('close', (code) => {
+        resolve({ success: code === 0, message: output.trim() });
+      });
+      proc.on('error', (e) => {
+        resolve({ success: false, message: e.message });
+      });
+    } catch (e) {
+      resolve({ success: false, message: e.message });
+    }
+  });
+}
+
 module.exports = {
   cleanUrl,
   identifyPlatform,
   getVideoInfo,
   downloadMedia,
+  updateYtDlp,
   formatBytes,
   formatDuration,
+  sanitizeFormatId,
   YT_DLP_PATH,
   FFMPEG_PATH,
   DOWNLOADS_DIR

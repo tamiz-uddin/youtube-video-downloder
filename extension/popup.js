@@ -1,8 +1,20 @@
 /**
- * OmniDownloader - Extension Popup Script
+ * VidLoader - Extension Popup Script
  */
 
-const BACKEND_BASE = 'http://localhost:3000';
+const DEFAULT_BACKEND_URL = 'http://localhost:3333';
+
+async function getBackendUrl() {
+  return new Promise((resolve) => {
+    if (chrome.storage && chrome.storage.sync) {
+      chrome.storage.sync.get(['backendUrl'], (result) => {
+        resolve(result.backendUrl || DEFAULT_BACKEND_URL);
+      });
+    } else {
+      resolve(DEFAULT_BACKEND_URL);
+    }
+  });
+}
 
 let activeTabUrl = '';
 let activeTabTitle = '';
@@ -40,8 +52,9 @@ document.querySelectorAll('.btn-format-toggle').forEach((btn) => {
 });
 
 // Open Web Dashboard
-function openDashboard(url = '') {
-  const targetUrl = url ? `${BACKEND_BASE}/?url=${encodeURIComponent(url)}` : `${BACKEND_BASE}/`;
+async function openDashboard(url = '') {
+  const backendBase = await getBackendUrl();
+  const targetUrl = url ? `${backendBase}/?url=${encodeURIComponent(url)}` : `${backendBase}/`;
   chrome.tabs.create({ url: targetUrl });
 }
 
@@ -95,8 +108,8 @@ async function loadVideoDetails(url) {
   noVideoState.style.display = 'none';
 
   try {
-    // 1. Try Backend API
-    const response = await fetch(`${BACKEND_BASE}/api/info`, {
+    const backendBase = await getBackendUrl();
+    const response = await fetch(`${backendBase}/api/info`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url })
@@ -110,7 +123,7 @@ async function loadVideoDetails(url) {
       }
     }
   } catch (backendErr) {
-    console.warn('Backend server not reachable on localhost:3000, falling back to direct tab probe...');
+    console.warn('Backend server not reachable, falling back to direct tab probe...');
   }
 
   // 2. Fallback: Direct inspection via tab content script
@@ -183,7 +196,8 @@ popupDownloadBtn.addEventListener('click', async () => {
   }
 
   // Trigger through backend stream download
-  const downloadUrl = `${BACKEND_BASE}/api/download/stream?url=${encodeURIComponent(activeTabUrl)}&formatId=${encodeURIComponent(selectedFormat)}&audio=${isAudio ? '1' : '0'}&title=${encodeURIComponent(cleanTitle)}`;
+  const backendBase = await getBackendUrl();
+  const downloadUrl = `${backendBase}/api/download/stream?url=${encodeURIComponent(activeTabUrl)}&formatId=${encodeURIComponent(selectedFormat)}&audio=${isAudio ? '1' : '0'}&title=${encodeURIComponent(cleanTitle)}`;
 
   triggerBrowserDownload(downloadUrl, filename);
 });

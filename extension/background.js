@@ -1,8 +1,20 @@
 /**
- * OmniDownloader - Background Service Worker (Manifest V3)
+ * VidLoader - Background Service Worker (Manifest V3)
  */
 
-const BACKEND_BASE = 'http://localhost:3000';
+const DEFAULT_BACKEND_URL = 'http://localhost:3333';
+
+async function getBackendUrl() {
+  return new Promise((resolve) => {
+    if (chrome.storage && chrome.storage.sync) {
+      chrome.storage.sync.get(['backendUrl'], (result) => {
+        resolve(result.backendUrl || DEFAULT_BACKEND_URL);
+      });
+    } else {
+      resolve(DEFAULT_BACKEND_URL);
+    }
+  });
+}
 
 // Register Context Menu
 chrome.runtime.onInstalled.addListener(() => {
@@ -15,7 +27,7 @@ chrome.runtime.onInstalled.addListener(() => {
 
 // Context Menu click handler
 chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (info.menuItemId === 'omni-download-context') {
+  if (info.menuItemId === 'vidloader-download-context') {
     const targetUrl = info.linkUrl || info.srcUrl || info.pageUrl || (tab && tab.url);
     if (!targetUrl) return;
 
@@ -34,7 +46,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // Perform Download via Chrome Downloads API
-function triggerDownload(url, title, directSrc) {
+async function triggerDownload(url, title, directSrc) {
+  const backendBase = await getBackendUrl();
   const cleanTitle = (title || 'video').replace(/[/\\?%*:|"<>]/g, '_').slice(0, 50);
 
   // If a direct video src exists and backend is optional
@@ -47,8 +60,8 @@ function triggerDownload(url, title, directSrc) {
     return;
   }
 
-  // Otherwise route to the OmniDownloader stream endpoint
-  const streamUrl = `${BACKEND_BASE}/api/download/stream?url=${encodeURIComponent(url)}&formatId=bestvideo+bestaudio/best&audio=0&title=${encodeURIComponent(cleanTitle)}`;
+  // Otherwise route to the VidLoader stream endpoint
+  const streamUrl = `${backendBase}/api/download/stream?url=${encodeURIComponent(url)}&formatId=bestvideo+bestaudio/best&audio=0&title=${encodeURIComponent(cleanTitle)}`;
 
   chrome.downloads.download({
     url: streamUrl,
@@ -58,7 +71,7 @@ function triggerDownload(url, title, directSrc) {
     if (chrome.runtime.lastError) {
       console.warn('Chrome download error:', chrome.runtime.lastError.message);
       // Fallback: open web app dashboard
-      chrome.tabs.create({ url: `${BACKEND_BASE}/?url=${encodeURIComponent(url)}` });
+      chrome.tabs.create({ url: `${backendBase}/?url=${encodeURIComponent(url)}` });
     }
   });
 }

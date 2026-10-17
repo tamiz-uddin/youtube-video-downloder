@@ -1,9 +1,7 @@
 /**
- * OmniDownloader - Content Script
+ * VidLoader - Content Script
  * Injects sleek floating download triggers over social media video elements
  */
-
-const BACKEND_BASE = 'http://localhost:3000';
 
 function formatDurationSec(sec) {
   if (!sec || isNaN(sec)) return '00:00';

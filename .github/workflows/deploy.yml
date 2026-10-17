@@ -1,0 +1,103 @@
+name: Deploy to VPS (Manual)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: Syntax & Sanity Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify JavaScript Syntax
+        run: |
+          node -c server.js
+          node -c services/downloader.js
+          node -c services/security.js
+          node -c ecosystem.config.js
+
+  deploy:
+    name: Deploy to Production VPS
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Execute Deployment via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script_stop: true
+          script: |
+            # Load environment paths (ensures node, pnpm, pm2 are in PATH)
+            [ -f ~/.bashrc ] && source ~/.bashrc
+            [ -f ~/.profile ] && source ~/.profile
+            [ -f ~/.nvm/nvm.sh ] && source ~/.nvm/nvm.sh
+            export PATH=$PATH:/usr/local/bin:/usr/bin:~/.local/share/pnpm
+
+            echo "============================================="
+            echo "🚀 Starting VidLoader CI/CD Deployment on VPS"
+            echo "============================================="
+
+            # 1. Target Directory (Default to /var/www/vidloader or custom directory)
+            APP_DIR="${{ secrets.VPS_TARGET_DIR || '/var/www/vidloader' }}"
+            
+            if [ ! -d "$APP_DIR" ]; then
+              echo "Directory $APP_DIR does not exist. Creating..."
+              mkdir -p "$APP_DIR"
+              git clone https://github.com/${{ github.repository }}.git "$APP_DIR"
+            fi
+
+            cd "$APP_DIR"
+
+            # 2. Pull latest code from GitHub main branch
+            echo "📥 Pulling latest changes from origin/main..."
+            git fetch origin main
+            git reset --hard origin/main
+
+            # 3. Ensure pnpm and pm2 are available
+            command -v pnpm >/dev/null 2>&1 || npm install -g pnpm
+            command -v pm2 >/dev/null 2>&1 || npm install -g pm2
+
+            # 4. Install production dependencies
+            echo "📦 Installing dependencies with pnpm..."
+            pnpm install --prod --frozen-lockfile
+
+            # 5. Set binary permissions
+            if [ -f "bin/yt-dlp" ]; then
+              chmod +x bin/yt-dlp
+            fi
+
+            # 6. Ensure runtime directories exist
+            mkdir -p downloads logs
+
+            # 7. Ensure .env exists (copy from .env.example if missing)
+            if [ ! -f ".env" ] && [ -f ".env.example" ]; then
+              echo "Creating default .env from .env.example..."
+              cp .env.example .env
+            fi
+
+            # 8. Reload or Start with PM2
+            echo "⚡ Starting/Reloading PM2 instance..."
+            pm2 startOrReload ecosystem.config.js --env production
+            pm2 save
+
+            echo "============================================="
+            echo "✅ VidLoader Deployment successfully finished!"
+            echo "============================================="

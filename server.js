@@ -7,6 +7,7 @@ const {
   identifyPlatform,
   getVideoInfo,
   downloadMedia,
+  updateYtDlp,
   formatBytes,
   YT_DLP_PATH,
   FFMPEG_PATH,
@@ -15,10 +16,10 @@ const {
 const { isSafeUrl, rateLimiter, startDiskCleanup } = require('./services/security');
 
 const app = express();
-const PORT = parseInt(process.env.PORT, 10) || 3000;
+const PORT = parseInt(process.env.PORT, 10) || 3333;
 const HOST = process.env.HOST || '0.0.0.0';
 
-// Enable trust proxy for reverse proxies (Nginx, Cloudflare, Docker, K8s)
+// Enable trust proxy for reverse proxies (Nginx, Cloudflare, Caddy, PM2)
 app.set('trust proxy', 1);
 
 // Production Security Headers
@@ -48,6 +49,12 @@ app.use('/api/', rateLimiter(40, 60 * 1000));
 // Safe Static File Delivery with safe deferred purge
 app.get('/files/:filename', (req, res) => {
   const safeFilename = path.basename(req.params.filename);
+
+  // Security guard: never allow accessing hidden or sensitive files
+  if (safeFilename.startsWith('.') || safeFilename.endsWith('.json') || safeFilename.endsWith('.js')) {
+    return res.status(403).send('Access denied.');
+  }
+
   const filePath = path.join(DOWNLOADS_DIR, safeFilename);
 
   if (!fs.existsSync(filePath)) {
@@ -55,17 +62,15 @@ app.get('/files/:filename', (req, res) => {
   }
 
   res.download(filePath, safeFilename, (err) => {
-    if (!err) {
-      // Grace period (5 mins) before purging so user download completes without truncation
-      setTimeout(() => {
-        try {
-          if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
-            console.log(`[AutoPurge] 🧹 Purged temporary server file: ${safeFilename}`);
-          }
-        } catch (e) {}
-      }, 5 * 60 * 1000);
-    }
+    // Schedule file removal 5 minutes after download initiation to allow completion & retry
+    setTimeout(() => {
+      try {
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+          console.log(`[AutoPurge] 🧹 Purged temporary server file: ${safeFilename}`);
+        }
+      } catch (e) {}
+    }, 5 * 60 * 1000);
   });
 });
 
@@ -80,7 +85,7 @@ setInterval(() => {
       activeJobs.delete(id);
     }
   }
-}, 5 * 60 * 1000);
+}, 5 * 60 * 1000).unref();
 
 // Start background auto-cleanup for temp media files older than 15 minutes
 startDiskCleanup(DOWNLOADS_DIR, 15 * 60 * 1000);
@@ -92,13 +97,15 @@ app.get('/api/health', (req, res) => {
   const ytExists = fs.existsSync(YT_DLP_PATH);
   const ffmpegExists = fs.existsSync(FFMPEG_PATH);
   res.json({
-    name: 'VidLoader',
+    name: 'VidLoader Studio',
     status: 'online',
     version: '2.0.0',
+    env: process.env.NODE_ENV || 'development',
     tools: {
       ytDlp: { available: ytExists, path: YT_DLP_PATH },
       ffmpeg: { available: ffmpegExists, path: FFMPEG_PATH }
     },
+    activeJobsCount: activeJobs.size,
     downloadsDir: DOWNLOADS_DIR,
     timestamp: new Date().toISOString()
   });
@@ -109,10 +116,9 @@ app.get('/api/health', (req, res) => {
  */
 app.post('/api/info', async (req, res) => {
   const { url } = req.body;
-  console.log(`[VidLoader] 📥 /api/info request received: "${url}"`);
 
-  // SSRF & Security Validation
-  const check = isSafeUrl(url);
+  // SSRF & Security Validation with DNS Rebinding Guard
+  const check = await isSafeUrl(url);
   if (!check.safe) {
     console.warn(`[VidLoader] Security blocked URL: "${url}" -> ${check.reason}`);
     return res.status(400).json({ error: check.reason });
@@ -176,7 +182,7 @@ app.post('/api/download/start', async (req, res) => {
   try {
     const { url, formatId, title, isAudio } = req.body;
 
-    const check = isSafeUrl(url);
+    const check = await isSafeUrl(url);
     if (!check.safe) {
       return res.status(400).json({ error: check.reason });
     }
@@ -185,7 +191,7 @@ app.post('/api/download/start', async (req, res) => {
 
     const safeTitle = (title || 'video')
       .replace(/[/\\?%*:|"<>]/g, '_')
-      .slice(0, 70);
+      .slice(0, 60);
 
     const job = {
       id: jobId,
@@ -205,6 +211,7 @@ app.post('/api/download/start', async (req, res) => {
       formatId,
       isAudio: !!isAudio,
       outputFilename: safeTitle,
+      jobId,
       onProgress: (progress) => {
         job.progress = progress;
         job.listeners.forEach(fn => fn(progress));
@@ -247,21 +254,24 @@ app.get('/api/download/stream', async (req, res) => {
   try {
     const { url, formatId, audio, title } = req.query;
 
-    const check = isSafeUrl(url);
+    const check = await isSafeUrl(url);
     if (!check.safe) {
       return res.status(400).send(check.reason);
     }
 
     const safeTitle = (title || 'download')
       .replace(/[/\\?%*:|"<>]/g, '_')
-      .slice(0, 70);
+      .slice(0, 60);
 
     const isAudio = audio === 'true' || audio === '1';
+    const streamJobId = 'stream_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+
     const result = await downloadMedia({
       url: check.cleanUrl,
       formatId,
       isAudio,
-      outputFilename: safeTitle
+      outputFilename: safeTitle,
+      jobId: streamJobId
     });
 
     if (!result.filePath || !fs.existsSync(result.filePath)) {
@@ -289,9 +299,12 @@ const server = app.listen(PORT, HOST, () => {
   console.log(`===============================================`);
   console.log(`  ⚡ VidLoader Studio Server online`);
   console.log(`  🌐 Web App:    http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
-  console.log(`  🛡️ Security:   SSRF Protection & Rate Limiting ACTIVE`);
+  console.log(`  🛡️ Security:   SSRF Guard, Concurrency Queue & Rate Limiter ACTIVE`);
   console.log(`  🔒 Mode:       Zero-log Ephemeral (Production Ready)`);
   console.log(`===============================================`);
+
+  // Attempt background update check of yt-dlp on startup
+  updateYtDlp().catch(() => {});
 });
 
 // Process signal handling & Graceful Shutdown

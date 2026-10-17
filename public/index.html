@@ -255,7 +255,7 @@
         <!-- Browser Bookmarklet for 1-Click Saves without Chrome Web Store -->
         <div class="bookmarklet-wrapper">
           <span>Browser Bookmarklet:</span>
-          <a href="javascript:(function(){var u=window.location.href;window.open('http://localhost:3000/?url='+encodeURIComponent(u)+'&auto=1','_blank');})();" class="bookmarklet-pill" title="Drag this to your bookmarks bar">
+          <a href="javascript:(function(){var u=window.location.href;window.open((window.location.origin&&window.location.origin.includes('localhost')?'http://localhost:3333/':'https://vidloader.app/')+'?url='+encodeURIComponent(u)+'&auto=1','_blank');})();" class="bookmarklet-pill" title="Drag this to your bookmarks bar">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
             <span>⚡ VidLoader Quick Save</span>
           </a>
