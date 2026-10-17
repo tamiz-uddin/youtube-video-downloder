@@ -187,10 +187,13 @@ function isDirectMediaUrl(url) {
   return u.endsWith('.mp4') || u.endsWith('.webm') || u.endsWith('.mov') || u.endsWith('.m3u8') || u.endsWith('.mp3');
 }
 
-// YouTube player clients. android/ios bypass datacenter IP bot checks but yt-dlp skips them
-// when --cookies is passed, so cookies are only used with the web clients as a fallback.
-const YOUTUBE_DEFAULT_CLIENTS = 'youtube:player_client=android,ios,tv';
-const YOUTUBE_COOKIE_CLIENTS = 'youtube:player_client=web,mweb';
+// YouTube player clients. Unset uses yt-dlp's defaults, which pick clients that don't need a PO token
+// (forcing android/ios now only yields 360p because of SABR). With a PO token provider plugin installed,
+// set e.g. YOUTUBE_PLAYER_CLIENT=mweb to use the client yt-dlp recommends.
+function youtubeClientArgs() {
+  const clients = (process.env.YOUTUBE_PLAYER_CLIENT || '').replace(/[^a-z0-9_,-]/gi, '');
+  return clients ? ['--extractor-args', `youtube:player_client=${clients}`] : [];
+}
 
 function getCookiesPath() {
   const cookiesPath = process.env.YOUTUBE_COOKIES_PATH || path.join(process.cwd(), 'cookies.txt');
@@ -469,7 +472,7 @@ async function getVideoInfo(rawUrl) {
       return await extractInfoWithYtDlp(url, platform, false);
     } catch (err) {
       if (!err.authRequired || !getCookiesPath()) throw err;
-      console.log(`[Extractor] YouTube requires login for ${url}. Retrying with cookies and web clients.`);
+      console.log(`[Extractor] YouTube requires login for ${url}. Retrying with cookies.`);
       return extractInfoWithYtDlp(url, platform, true);
     }
   }
@@ -479,7 +482,7 @@ async function getVideoInfo(rawUrl) {
 
 /**
  * Run yt-dlp metadata extraction. useCookies controls whether cookies.txt is passed
- * (and, for YouTube, switches to cookie-capable player clients).
+ * (YouTube tries without cookies first and only retries with them when login is required).
  */
 function extractInfoWithYtDlp(url, platform, useCookies) {
   return new Promise((resolve, reject) => {
@@ -497,9 +500,7 @@ function extractInfoWithYtDlp(url, platform, useCookies) {
 
     if (platform === 'youtube') {
       args.push('--js-runtimes', `node:${process.execPath}`);
-      // android/ios/tv avoid the GVS PO Token / bot challenge on datacenter VPS IPs, but android and ios
-      // don't support cookies, so authenticated retries use the web clients instead
-      args.push('--extractor-args', useCookies ? YOUTUBE_COOKIE_CLIENTS : YOUTUBE_DEFAULT_CLIENTS);
+      args.push(...youtubeClientArgs());
     } else if (platform === 'tiktok') {
       // ByteDance WAF detects and blocks curl_cffi TLS impersonation with 403 or captcha
       args.push('--add-header', 'Referer:https://www.tiktok.com/');
@@ -908,7 +909,7 @@ function runDownload({ url, formatId, isAudio, outputFilename, jobId, onProgress
 
       if (platform === 'youtube') {
         args.push('--js-runtimes', `node:${process.execPath}`);
-        args.push('--extractor-args', useCookies ? YOUTUBE_COOKIE_CLIENTS : YOUTUBE_DEFAULT_CLIENTS);
+        args.push(...youtubeClientArgs());
       } else if (platform === 'tiktok') {
         args.push('--add-header', 'Referer:https://www.tiktok.com/');
         args.push('--add-header', 'User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36');
@@ -1134,7 +1135,7 @@ function runDownload({ url, formatId, isAudio, outputFilename, jobId, onProgress
           });
         } else {
           if (platform === 'youtube' && !useCookies && !timedOut && getCookiesPath() && isYouTubeAuthError(errorOutput)) {
-            console.log(`[Downloader] YouTube requires login [Job: ${safeJobId}]. Retrying with cookies and web clients.`);
+            console.log(`[Downloader] YouTube requires login [Job: ${safeJobId}]. Retrying with cookies.`);
             return startYtDlp(true);
           }
           if (platform === 'tiktok') {
