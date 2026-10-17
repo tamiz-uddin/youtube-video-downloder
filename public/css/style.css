@@ -977,61 +977,339 @@ body {
 /* ==========================================================================
    Real-Time Download Progress Box
    ========================================================================== */
+/* ==========================================================================
+   Real-Time Studio Download Progress Dashboard
+   ========================================================================== */
 .progress-card {
   display: none;
   margin-top: 1.25rem;
-  background: var(--bg-subtle);
-  border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  padding: 1rem 1.25rem;
+  background: linear-gradient(180deg, #111420 0%, #0d0f18 100%);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  border-radius: 14px;
+  padding: 1.35rem 1.45rem;
+  box-shadow: 0 16px 40px -10px rgba(0, 0, 0, 0.7), 0 0 24px -4px rgba(99, 102, 241, 0.15);
+  position: relative;
+  overflow: hidden;
+  animation: cardFadeIn 0.3s ease;
 }
 
-.progress-card-header {
+.progress-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.6), rgba(168, 85, 247, 0.6), transparent);
+}
+
+/* Stepper */
+.progress-stepper {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 0.6rem;
-  font-size: 0.82rem;
+  margin-bottom: 1.15rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.progress-label {
-  color: var(--text-primary);
-  font-weight: 500;
-  display: flex;
+.progress-step-pill {
+  display: inline-flex;
   align-items: center;
   gap: 0.45rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  transition: all 0.25s ease;
 }
 
-.progress-metric {
+.progress-step-pill .step-indicator {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.progress-step-pill .step-beacon {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.25);
+  transition: all 0.25s ease;
+}
+
+.progress-step-pill .step-check {
+  display: none;
+}
+
+.progress-step-pill.active {
+  background: rgba(99, 102, 241, 0.12);
+  border-color: rgba(99, 102, 241, 0.4);
+  color: #a5b4fc;
+}
+
+.progress-step-pill.active .step-beacon {
+  background: #6366f1;
+  box-shadow: 0 0 10px #6366f1;
+  animation: beaconPulse 1.4s infinite;
+}
+
+.progress-step-pill.completed {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #6ee7b7;
+}
+
+.progress-step-pill.completed .step-beacon {
+  display: none;
+}
+
+.progress-step-pill.completed .step-check {
+  display: block;
+  stroke: #34d399;
+}
+
+@keyframes beaconPulse {
+  0% { transform: scale(0.9); opacity: 0.7; }
+  50% { transform: scale(1.4); opacity: 1; box-shadow: 0 0 12px #818cf8; }
+  100% { transform: scale(0.9); opacity: 0.7; }
+}
+
+.step-connector {
+  flex: 1;
+  height: 1px;
+  margin: 0 0.5rem;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Main Row */
+.progress-main-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  gap: 1rem;
+}
+
+.progress-active-task {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* Radar Pulse */
+.radar-pulse-box {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  flex-shrink: 0;
+}
+
+.radar-core {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6366f1;
+  box-shadow: 0 0 8px #6366f1;
+}
+
+.radar-ring {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  border: 1.5px solid #818cf8;
+  animation: radarPing 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+  opacity: 0;
+}
+
+@keyframes radarPing {
+  0% { transform: scale(0.8); opacity: 0.8; }
+  75%, 100% { transform: scale(1.6); opacity: 0; }
+}
+
+.progress-text-stack {
+  display: flex;
+  flex-direction: column;
+}
+
+.progress-title {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 0.92rem;
+  letter-spacing: -0.01em;
+}
+
+.progress-subtitle {
+  color: var(--text-tertiary);
+  font-size: 0.74rem;
+  margin-top: 0.15rem;
+}
+
+/* Big Percent Display */
+.progress-percentage-display {
+  display: flex;
+  align-items: baseline;
   font-family: var(--font-mono);
-  font-size: 0.78rem;
-  color: var(--text-secondary);
+  color: #ffffff;
+}
+
+.progress-big-number {
+  font-size: 2.1rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  background: linear-gradient(180deg, #ffffff 30%, #94a3b8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.progress-percent-symbol {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #6366f1;
+  margin-left: 2px;
+}
+
+/* Track Bar */
+.progress-track-wrapper {
+  margin-bottom: 1.1rem;
 }
 
 .progress-track-bar {
   width: 100%;
-  height: 6px;
-  background: rgba(255, 255, 255, 0.06);
+  height: 10px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 999px;
   overflow: hidden;
+  position: relative;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6);
 }
 
 .progress-track-fill {
   height: 100%;
   width: 0%;
-  background: var(--accent-blue);
+  background: linear-gradient(90deg, #06b6d4 0%, #3b82f6 35%, #6366f1 70%, #a855f7 100%);
   border-radius: 999px;
-  transition: width 0.25s ease;
+  position: relative;
+  transition: width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  box-shadow: 0 0 16px rgba(99, 102, 241, 0.55);
 }
 
-.progress-meta-footer {
+/* Animated Shimmer Beam */
+.progress-shimmer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.4) 50%,
+    transparent 100%
+  );
+  animation: shimmerGlide 1.8s infinite;
+}
+
+@keyframes shimmerGlide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+.progress-lead-dot {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 12px 3px #ffffff, 0 0 20px 6px #6366f1;
+}
+
+/* Muxing / Processing Pulsing Mode */
+.progress-card.is-muxing .progress-track-fill {
+  background: linear-gradient(
+    45deg,
+    #6366f1 25%,
+    #8b5cf6 25%,
+    #8b5cf6 50%,
+    #6366f1 50%,
+    #6366f1 75%,
+    #8b5cf6 75%,
+    #8b5cf6
+  );
+  background-size: 28px 28px;
+  animation: muxingStripes 1s linear infinite;
+}
+
+@keyframes muxingStripes {
+  0% { background-position: 0 0; }
+  100% { background-position: 28px 0; }
+}
+
+/* Metrics Grid */
+.progress-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+}
+
+@media (max-width: 640px) {
+  .progress-metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.metric-cell {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 0.5rem 0.65rem;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 0.5rem;
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
+  flex-direction: column;
+}
+
+.metric-label {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: var(--text-tertiary);
+  margin-bottom: 0.2rem;
+}
+
+.metric-value {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.metric-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #818cf8;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
 }
 
 /* Completion Ready Save Banner */

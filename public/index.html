@@ -319,21 +319,80 @@
           </div>
         </div>
 
-        <!-- Real-Time Progress Card -->
+        <!-- Real-Time Progress Studio Dashboard -->
         <div id="progressCard" class="progress-card">
-          <div class="progress-card-header">
-            <div class="progress-label">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-              <span id="progressStatusLabel">Downloading Stream...</span>
+          <!-- Multi-Phase Pipeline Stepper -->
+          <div class="progress-stepper">
+            <div id="stageVideo" class="progress-step-pill active">
+              <span class="step-indicator">
+                <span class="step-beacon"></span>
+                <svg class="step-check" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              </span>
+              <span class="step-name">1. Video Track</span>
             </div>
-            <div id="progressPercentage" class="progress-metric">0%</div>
+            <div class="step-connector"></div>
+            <div id="stageAudio" class="progress-step-pill">
+              <span class="step-indicator">
+                <span class="step-beacon"></span>
+                <svg class="step-check" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              </span>
+              <span class="step-name">2. Audio Stream</span>
+            </div>
+            <div class="step-connector"></div>
+            <div id="stageMux" class="progress-step-pill">
+              <span class="step-indicator">
+                <span class="step-beacon"></span>
+                <svg class="step-check" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              </span>
+              <span class="step-name">3. Studio Muxing</span>
+            </div>
           </div>
-          <div class="progress-track-bar">
-            <div id="progressTrackFill" class="progress-track-fill"></div>
+
+          <!-- Main Header Row with Radar + Big Percent -->
+          <div class="progress-main-row">
+            <div class="progress-active-task">
+              <div class="radar-pulse-box">
+                <span class="radar-core"></span>
+                <span class="radar-ring"></span>
+              </div>
+              <div class="progress-text-stack">
+                <span id="progressStatusLabel" class="progress-title">Initializing Stream Pipeline...</span>
+                <span id="progressSubLabel" class="progress-subtitle">Connecting to high-speed media delivery network</span>
+              </div>
+            </div>
+            <div class="progress-percentage-display">
+              <span id="progressPercentageNumber" class="progress-big-number">0</span><span class="progress-percent-symbol">%</span>
+            </div>
           </div>
-          <div class="progress-meta-footer">
-            <span id="progressSpeed">Speed: --</span>
-            <span id="progressEta">ETA: --</span>
+
+          <!-- Glowing Hyper-Precision Progress Track -->
+          <div class="progress-track-wrapper">
+            <div class="progress-track-bar">
+              <div id="progressTrackFill" class="progress-track-fill">
+                <div class="progress-shimmer"></div>
+                <div class="progress-lead-dot"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Studio Metrics Grid -->
+          <div class="progress-metrics-grid">
+            <div class="metric-cell">
+              <span class="metric-label">Transferred</span>
+              <span id="progressTransferred" class="metric-value">-- / --</span>
+            </div>
+            <div class="metric-cell">
+              <span class="metric-label">Download Speed</span>
+              <span id="progressSpeed" class="metric-value">⚡ --</span>
+            </div>
+            <div class="metric-cell">
+              <span class="metric-label">Time Remaining</span>
+              <span id="progressEta" class="metric-value">⏱️ --</span>
+            </div>
+            <div class="metric-cell">
+              <span class="metric-label">Active Stage</span>
+              <span id="progressPhaseBadge" class="metric-badge">Video Track</span>
+            </div>
           </div>
 
           <!-- Ready Fallback Download Button -->
@@ -341,7 +400,7 @@
             <div class="ready-info-row">
               <div class="ready-badge">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                <span>File Ready</span>
+                <span>File Assembled & Ready</span>
               </div>
               <span id="readyFileNameText" class="ready-filename">video.mp4</span>
             </div>

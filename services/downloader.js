@@ -518,6 +518,7 @@ function runDownload({ url, formatId, isAudio, outputFilename, jobId, onProgress
       '--no-warnings',
       '--no-check-certificates',
       '--newline',
+      '--progress-template', 'download-progress:%(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress._percent_str)s|%(info.vcodec)s|%(info.acodec)s',
       '--ffmpeg-location', FFMPEG_PATH,
       '-o', outputTemplate
     ];
@@ -562,6 +563,13 @@ function runDownload({ url, formatId, isAudio, outputFilename, jobId, onProgress
     let resolvedPath = null;
     let errorOutput = '';
 
+    // Multi-phase progress state trackers
+    let highestPercent = 1;
+    let currentPhase = isAudio ? 'audio' : 'video';
+    let lastKnownSpeed = '';
+    let lastKnownEta = '';
+    let lastKnownSize = '';
+
     // Safety timeout: 15 minutes for 4K streams
     const downloadTimer = setTimeout(() => {
       try {
@@ -571,35 +579,141 @@ function runDownload({ url, formatId, isAudio, outputFilename, jobId, onProgress
     }, 15 * 60 * 1000);
 
     proc.stdout.on('data', (chunk) => {
-      const line = chunk.toString();
+      const rawText = chunk.toString();
+      const lines = rawText.split('\n');
 
-      const progressMatch = line.match(/\[download\]\s+([\d.]+)%\s+of\s+~?([\d.]+\w+)\s+at\s+([\d.]+\w+\/s)\s+ETA\s+([\d:]+)/i) ||
-                            line.match(/\[download\]\s+([\d.]+)%/i);
+      for (let line of lines) {
+        line = line.trim();
+        if (!line) continue;
 
-      if (progressMatch && onProgress) {
-        const percent = parseFloat(progressMatch[1]);
-        const size = progressMatch[2] || '';
-        const speed = progressMatch[3] || '';
-        const eta = progressMatch[4] || '';
-        onProgress({ percent, size, speed, eta, status: 'downloading' });
-      }
+        // 1. Check for FFmpeg Merger / Audio Extraction phase
+        if (line.includes('[Merger]') || line.includes('[ExtractAudio]')) {
+          currentPhase = 'muxing';
+          highestPercent = Math.max(highestPercent, 96);
+          if (onProgress) {
+            onProgress({
+              percent: Math.min(99, highestPercent),
+              phase: 'muxing',
+              phaseLabel: 'FFmpeg Studio Muxing',
+              speed: 'Processing',
+              eta: 'Finalizing',
+              size: lastKnownSize || 'Processing Container',
+              transferred: lastKnownSize || 'Merging Streams',
+              status: 'processing',
+              message: '⚡ Assembling & merging high-definition media streams...'
+            });
+          }
+          continue;
+        }
 
-      // Detect FFmpeg merger / audio extraction phase
-      if ((line.includes('[Merger]') || line.includes('[ExtractAudio]')) && onProgress) {
-        onProgress({
-          percent: 99,
-          size: '',
-          speed: 'FFmpeg Muxing',
-          eta: 'Finalizing',
-          status: 'processing',
-          message: 'Processing & merging HD media streams...'
-        });
-      }
+        // 2. Structured progress template output from yt-dlp
+        if (line.startsWith('download-progress:')) {
+          const payload = line.replace('download-progress:', '').trim();
+          const parts = payload.split('|');
+          const downloadedBytes = parseInt(parts[0], 10) || 0;
+          const totalBytes = parseInt(parts[1], 10) || 0;
+          let speed = (parts[2] || '').trim();
+          let eta = (parts[3] || '').trim();
+          let pctStr = (parts[4] || '').replace('%', '').trim();
+          const vcodec = (parts[5] || '').trim();
+          const acodec = (parts[6] || '').trim();
 
-      const destMatch = line.match(/\[(?:download|Merger|ExtractAudio)\] Destination:\s+(.+)$/m) ||
-                        line.match(/\[Merger\] Merging formats into "(.+)"/m);
-      if (destMatch && destMatch[1]) {
-        resolvedPath = destMatch[1].trim();
+          const subPercent = parseFloat(pctStr) || 0;
+
+          // Determine current phase based on stream codecs
+          if (vcodec && vcodec !== 'none' && acodec === 'none') {
+            currentPhase = 'video';
+          } else if (vcodec === 'none' && acodec && acodec !== 'none') {
+            currentPhase = 'audio';
+          } else if (isAudio) {
+            currentPhase = 'audio';
+          }
+
+          // Calculate monotonic overall progress
+          let calculatedPercent = 0;
+          if (isAudio) {
+            calculatedPercent = subPercent * 0.92;
+          } else if (currentPhase === 'video') {
+            calculatedPercent = subPercent * 0.74; // Video is 0% -> 74%
+          } else if (currentPhase === 'audio') {
+            calculatedPercent = 74 + (subPercent * 0.20); // Audio is 74% -> 94%
+          } else {
+            calculatedPercent = subPercent * 0.94;
+          }
+
+          highestPercent = Math.max(highestPercent, calculatedPercent);
+
+          if (speed && speed !== 'Unknown B/s' && speed !== 'NA') {
+            lastKnownSpeed = speed;
+          }
+          if (eta && eta !== 'Unknown' && eta !== 'NA') {
+            lastKnownEta = eta;
+          }
+
+          let transferred = '';
+          if (downloadedBytes > 0 && totalBytes > 0) {
+            transferred = `${formatBytes(downloadedBytes)} / ${formatBytes(totalBytes)}`;
+            lastKnownSize = formatBytes(totalBytes);
+          } else if (downloadedBytes > 0) {
+            transferred = formatBytes(downloadedBytes);
+          }
+
+          if (onProgress) {
+            onProgress({
+              percent: Math.min(99, Math.round(highestPercent)),
+              rawPercent: Math.round(subPercent),
+              phase: currentPhase,
+              phaseLabel: currentPhase === 'audio' ? 'Downloading Audio Stream' : 'Downloading Video Stream',
+              speed: lastKnownSpeed || 'Analyzing...',
+              eta: lastKnownEta || 'Calculating...',
+              transferred: transferred || lastKnownSize || '-- / --',
+              size: lastKnownSize || '',
+              status: 'downloading'
+            });
+          }
+          continue;
+        }
+
+        // 3. Fallback standard yt-dlp line regex matcher
+        const pctMatch = line.match(/\[download\]\s+([\d.]+)%/i);
+        if (pctMatch) {
+          const subPercent = parseFloat(pctMatch[1]);
+          const sizeMatch = line.match(/of\s+~?\s*([\d.]+\s*[KMGT]?i?B)/i);
+          const speedMatch = line.match(/at\s+([\d.]+\s*[KMGT]?i?B\/s)/i);
+          const etaMatch = line.match(/ETA\s+([\d:]+)/i);
+
+          if (speedMatch && speedMatch[1]) lastKnownSpeed = speedMatch[1].trim();
+          if (etaMatch && etaMatch[1]) lastKnownEta = etaMatch[1].trim();
+          if (sizeMatch && sizeMatch[1]) lastKnownSize = sizeMatch[1].trim();
+
+          // Transition to audio if destination indicates audio track or secondary stream
+          if (line.includes('.f251.') || line.includes('.f140.') || line.includes('audio')) {
+            currentPhase = 'audio';
+          }
+
+          let calculatedPercent = isAudio ? subPercent * 0.92 : (currentPhase === 'video' ? subPercent * 0.74 : 74 + subPercent * 0.20);
+          highestPercent = Math.max(highestPercent, calculatedPercent);
+
+          if (onProgress) {
+            onProgress({
+              percent: Math.min(99, Math.round(highestPercent)),
+              rawPercent: Math.round(subPercent),
+              phase: currentPhase,
+              phaseLabel: currentPhase === 'audio' ? 'Downloading Audio Stream' : 'Downloading Video Stream',
+              speed: lastKnownSpeed || 'Optimizing...',
+              eta: lastKnownEta || 'Estimating...',
+              transferred: lastKnownSize || '--',
+              size: lastKnownSize || '',
+              status: 'downloading'
+            });
+          }
+        }
+
+        const destMatch = line.match(/\[(?:download|Merger|ExtractAudio)\] Destination:\s+(.+)$/m) ||
+                          line.match(/\[Merger\] Merging formats into "(.+)"/m);
+        if (destMatch && destMatch[1]) {
+          resolvedPath = destMatch[1].trim();
+        }
       }
     });
 

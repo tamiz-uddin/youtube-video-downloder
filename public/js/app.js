@@ -162,16 +162,7 @@ async function triggerDirectDownload(url, isAudio = false) {
   if (!url) return;
   setLoadingState(true);
   hideError();
-  videoResultCard.style.display = 'none';
-  progressCard.style.display = 'block';
-  if (readyDownloadBanner) readyDownloadBanner.style.display = 'none';
-  progressTrackFill.style.width = '0%';
-  progressPercentage.textContent = '0%';
-  progressStatusLabel.textContent = isAudio 
-    ? '🎵 Initializing direct 320kbps MP3 extraction...' 
-    : '⚡ Starting direct 1080p stream extraction...';
-  progressSpeed.textContent = 'Speed: --';
-  progressEta.textContent = 'ETA: --';
+  resetProgressCard(isAudio);
 
   if (quickDownloadBtn) quickDownloadBtn.disabled = true;
   if (quickAudioBtn) quickAudioBtn.disabled = true;
@@ -403,13 +394,7 @@ tabAudioFormats.addEventListener('click', () => {
 // Direct 1-Click Action Buttons from Result Card
 async function startDirectDownloadJob(formatId, isAudio) {
   if (!currentVideoData) return;
-  progressCard.style.display = 'block';
-  if (readyDownloadBanner) readyDownloadBanner.style.display = 'none';
-  progressTrackFill.style.width = '0%';
-  progressPercentage.textContent = '0%';
-  progressStatusLabel.textContent = isAudio ? '🎵 Initializing 320kbps MP3 muxer...' : '⚡ Initializing 1080p MP4 muxer...';
-  progressSpeed.textContent = 'Speed: --';
-  progressEta.textContent = 'ETA: --';
+  resetProgressCard(isAudio);
   if (startDownloadBtn) startDownloadBtn.disabled = true;
   if (quickDirectVideoBtn) quickDirectVideoBtn.disabled = true;
   if (quickDirectAudioBtn) quickDirectAudioBtn.disabled = true;
@@ -459,13 +444,8 @@ if (quickDirectAudioBtn) {
 startDownloadBtn.addEventListener('click', async () => {
   if (!currentVideoData || !selectedFormat) return;
 
-  progressCard.style.display = 'block';
-  if (readyDownloadBanner) readyDownloadBanner.style.display = 'none';
-  progressTrackFill.style.width = '0%';
-  progressPercentage.textContent = '0%';
-  progressStatusLabel.textContent = 'Initializing stream...';
-  progressSpeed.textContent = 'Speed: --';
-  progressEta.textContent = 'ETA: --';
+  const isAudio = selectedFormat.type === 'audio';
+  resetProgressCard(isAudio);
   startDownloadBtn.disabled = true;
 
   try {
@@ -495,6 +475,103 @@ startDownloadBtn.addEventListener('click', async () => {
   }
 });
 
+// Studio Progress Dashboard State Management
+function updateProgressUI({ percent, phase, phaseLabel, statusLabel, subLabel, speed, eta, transferred }) {
+  const pct = Math.max(0, Math.min(100, Math.round(percent || 0)));
+  
+  if (progressTrackFill) {
+    progressTrackFill.style.width = `${pct}%`;
+  }
+  
+  const pctNumEl = document.getElementById('progressPercentageNumber');
+  if (pctNumEl) {
+    pctNumEl.textContent = pct;
+  } else if (progressPercentage) {
+    progressPercentage.textContent = `${pct}%`;
+  }
+
+  if (progressStatusLabel && statusLabel) {
+    progressStatusLabel.textContent = statusLabel;
+  }
+  
+  const subLabelEl = document.getElementById('progressSubLabel');
+  if (subLabelEl && subLabel) {
+    subLabelEl.textContent = subLabel;
+  }
+
+  const transferredEl = document.getElementById('progressTransferred');
+  if (transferredEl && transferred) {
+    transferredEl.textContent = transferred;
+  }
+
+  if (progressSpeed && speed) {
+    progressSpeed.textContent = speed.startsWith('⚡') ? speed : `⚡ ${speed}`;
+  }
+
+  if (progressEta && eta) {
+    progressEta.textContent = eta.startsWith('⏱️') ? eta : `⏱️ ${eta}`;
+  }
+
+  const phaseBadgeEl = document.getElementById('progressPhaseBadge');
+  if (phaseBadgeEl && phaseLabel) {
+    phaseBadgeEl.textContent = phaseLabel;
+  }
+
+  // Stepper pill updates
+  const stageVideo = document.getElementById('stageVideo');
+  const stageAudio = document.getElementById('stageAudio');
+  const stageMux = document.getElementById('stageMux');
+
+  if (stageVideo && stageAudio && stageMux) {
+    if (phase === 'muxing') {
+      stageVideo.className = 'progress-step-pill completed';
+      stageAudio.className = 'progress-step-pill completed';
+      stageMux.className = 'progress-step-pill active';
+      progressCard.classList.add('is-muxing');
+    } else if (phase === 'audio') {
+      stageVideo.className = 'progress-step-pill completed';
+      stageAudio.className = 'progress-step-pill active';
+      stageMux.className = 'progress-step-pill';
+      progressCard.classList.remove('is-muxing');
+    } else if (phase === 'completed') {
+      stageVideo.className = 'progress-step-pill completed';
+      stageAudio.className = 'progress-step-pill completed';
+      stageMux.className = 'progress-step-pill completed';
+      progressCard.classList.remove('is-muxing');
+    } else {
+      // Default: video phase
+      stageVideo.className = 'progress-step-pill active';
+      stageAudio.className = 'progress-step-pill';
+      stageMux.className = 'progress-step-pill';
+      progressCard.classList.remove('is-muxing');
+    }
+  }
+}
+
+function resetProgressCard(isAudio = false) {
+  progressCard.style.display = 'block';
+  progressCard.classList.remove('is-muxing');
+  if (readyDownloadBanner) readyDownloadBanner.style.display = 'none';
+
+  updateProgressUI({
+    percent: 0,
+    phase: isAudio ? 'audio' : 'video',
+    phaseLabel: isAudio ? 'Audio Stream' : 'Video Track',
+    statusLabel: isAudio ? 'Extracting High-Bitrate Audio Stream...' : 'Connecting to Stream Delivery Network...',
+    subLabel: 'Allocating high-speed buffer & initializing stream capture',
+    speed: 'Initializing...',
+    eta: 'Estimating...',
+    transferred: '0.0 MB / Allocating'
+  });
+
+  const stageVideo = document.getElementById('stageVideo');
+  if (stageVideo && isAudio) {
+    stageVideo.style.display = 'none';
+  } else if (stageVideo) {
+    stageVideo.style.display = 'inline-flex';
+  }
+}
+
 // SSE Download Progress
 function listenToProgress(jobId) {
   if (currentEventSource) currentEventSource.close();
@@ -505,28 +582,50 @@ function listenToProgress(jobId) {
     const data = JSON.parse(event.data);
 
     if (data.status === 'queued') {
-      progressTrackFill.style.width = '10%';
-      progressPercentage.textContent = 'Queue';
-      progressStatusLabel.textContent = data.message || `Server busy. Queued (position #${data.queuePosition || 1})...`;
-      progressSpeed.textContent = 'Queued';
-      progressEta.textContent = 'Waiting slot';
+      updateProgressUI({
+        percent: 8,
+        phase: 'queued',
+        phaseLabel: `Queue #${data.queuePosition || 1}`,
+        statusLabel: 'Server Buffer Full — Queued in Line',
+        subLabel: data.message || `Position #${data.queuePosition || 1} in queue. Download will commence automatically.`,
+        speed: 'In Queue',
+        eta: 'Waiting Slot',
+        transferred: 'Standby'
+      });
     } else if (data.status === 'downloading') {
       const pct = Math.round(data.percent || 0);
-      progressTrackFill.style.width = `${pct}%`;
-      progressPercentage.textContent = `${pct}%`;
-      progressStatusLabel.textContent = `Downloading ${data.size ? '(' + data.size + ')' : ''}`;
-      if (data.speed) progressSpeed.textContent = `Speed: ${data.speed}`;
-      if (data.eta) progressEta.textContent = `ETA: ${data.eta}`;
+      updateProgressUI({
+        percent: pct,
+        phase: data.phase || 'video',
+        phaseLabel: data.phaseLabel || (data.phase === 'audio' ? 'Audio Stream' : 'Video Track'),
+        statusLabel: data.phase === 'audio' ? 'Downloading Audio Stream' : 'Downloading Video Stream',
+        subLabel: `Receiving media packets (${data.transferred || data.size || 'In Progress'})`,
+        speed: data.speed || 'Analyzing...',
+        eta: data.eta || 'Estimating...',
+        transferred: data.transferred || (data.size ? data.size : 'In progress')
+      });
     } else if (data.status === 'processing') {
-      progressTrackFill.style.width = '99%';
-      progressPercentage.textContent = '99%';
-      progressStatusLabel.textContent = data.message || '⚡ Processing & merging HD media streams...';
-      progressSpeed.textContent = 'Muxing';
-      progressEta.textContent = 'Finalizing';
+      updateProgressUI({
+        percent: Math.max(96, Math.round(data.percent || 96)),
+        phase: 'muxing',
+        phaseLabel: 'FFmpeg Muxing',
+        statusLabel: '⚡ Assembling & Merging Media Container',
+        subLabel: 'Muxing high-definition video track with lossless audio into standard MP4',
+        speed: 'Processing',
+        eta: 'Finalizing',
+        transferred: data.transferred || 'Finalizing Container'
+      });
     } else if (data.status === 'completed') {
-      progressTrackFill.style.width = '100%';
-      progressPercentage.textContent = '100%';
-      progressStatusLabel.textContent = '✓ Ready! Delivering file to browser...';
+      updateProgressUI({
+        percent: 100,
+        phase: 'completed',
+        phaseLabel: 'Finished ✓',
+        statusLabel: '✓ Stream Assembled & Ready!',
+        subLabel: 'Delivering file directly to your browser download manager',
+        speed: 'Complete',
+        eta: 'Done',
+        transferred: '100% Ready'
+      });
       startDownloadBtn.disabled = false;
       currentEventSource.close();
 
@@ -550,7 +649,16 @@ function listenToProgress(jobId) {
         document.body.removeChild(link);
       }
     } else if (data.status === 'error') {
-      progressStatusLabel.textContent = 'Extraction failed';
+      updateProgressUI({
+        percent: 0,
+        phase: 'error',
+        phaseLabel: 'Error',
+        statusLabel: 'Stream Extraction Failed',
+        subLabel: data.error || 'The remote media server rejected the stream request.',
+        speed: 'Halted',
+        eta: 'Failed',
+        transferred: 'Error'
+      });
       showError('Download Notice', data.error || 'Failed during audio/video stream muxing.');
       startDownloadBtn.disabled = false;
       currentEventSource.close();
