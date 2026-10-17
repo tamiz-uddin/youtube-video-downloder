@@ -627,26 +627,37 @@ function listenToProgress(jobId) {
         transferred: '100% Ready'
       });
       startDownloadBtn.disabled = false;
-      currentEventSource.close();
 
-      if (data.fileName) {
-        // Guaranteed fallback direct download button
+      const targetFileName = data.fileName;
+      if (targetFileName) {
+        try {
+          currentEventSource.close();
+        } catch (e) {}
+
+        // 1. Guaranteed fallback direct download button on the card
         if (readyDownloadBanner) {
           readyDownloadBanner.style.display = 'block';
-          if (readyFileNameText) readyFileNameText.textContent = data.fileName;
+          if (readyFileNameText) readyFileNameText.textContent = targetFileName;
           if (readyDownloadLink) {
-            readyDownloadLink.href = `/files/${encodeURIComponent(data.fileName)}`;
-            readyDownloadLink.download = data.fileName;
+            readyDownloadLink.href = `/files/${encodeURIComponent(targetFileName)}`;
+            readyDownloadLink.download = targetFileName;
           }
         }
 
-        // Automatic browser save trigger
-        const link = document.createElement('a');
-        link.href = `/files/${encodeURIComponent(data.fileName)}`;
-        link.download = data.fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        // 2. Automatic browser download trigger
+        try {
+          const downloadUrl = `/files/${encodeURIComponent(targetFileName)}`;
+          const link = document.createElement('a');
+          link.href = downloadUrl;
+          link.download = targetFileName;
+          document.body.appendChild(link);
+          link.click();
+          setTimeout(() => {
+            try { document.body.removeChild(link); } catch (e) {}
+          }, 1000);
+        } catch (downloadErr) {
+          console.warn('[Download] Auto trigger failed:', downloadErr);
+        }
       }
     } else if (data.status === 'error') {
       updateProgressUI({

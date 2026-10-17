@@ -310,10 +310,14 @@ function downloadDirectStream({ streamUrl, outputTemplate, isAudio, jobId, onPro
       '--retry', '3',
       '--retry-delay', '1',
       '-A', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
-      '-e', 'https://www.tiktok.com/',
-      '-o', outputTemplate,
-      streamUrl
+      '-o', outputTemplate
     ];
+
+    if (streamUrl.includes('tiktok') || streamUrl.includes('tikwm')) {
+      curlArgs.push('-e', 'https://www.tiktok.com/');
+    }
+
+    curlArgs.push(streamUrl);
 
     const proc = spawn('curl', curlArgs, { windowsHide: true });
     let errorOutput = '';
@@ -371,6 +375,7 @@ function downloadDirectStream({ streamUrl, outputTemplate, isAudio, jobId, onPro
       clearInterval(progressTimer);
       if (code === 0 && fs.existsSync(outputTemplate)) {
         const finalSize = fs.statSync(outputTemplate).size;
+        const finalFileName = path.basename(outputTemplate);
         if (onProgress) {
           onProgress({
             percent: 100,
@@ -381,12 +386,13 @@ function downloadDirectStream({ streamUrl, outputTemplate, isAudio, jobId, onPro
             eta: 'Complete',
             transferred: formatBytes(finalSize),
             size: formatBytes(finalSize),
-            status: 'completed'
+            status: 'completed',
+            fileName: finalFileName
           });
         }
         resolve({
           filePath: outputTemplate,
-          fileName: path.basename(outputTemplate),
+          fileName: finalFileName,
           fileSize: finalSize
         });
       } else {
@@ -456,8 +462,8 @@ async function getVideoInfo(rawUrl) {
 
     if (platform === 'youtube') {
       args.push('--js-runtimes', `node:${process.execPath}`);
-      // Use mobile and mobile-web player clients to bypass YouTube datacenter IP bot verification
-      args.push('--extractor-args', 'youtube:player_client=ios,android,mweb,web');
+      // Use android, ios, and tv clients - removes web/mweb which trigger GVS PO Token / bot challenge on datacenter VPS IPs
+      args.push('--extractor-args', 'youtube:player_client=android,ios,tv');
     } else if (platform === 'tiktok') {
       // ByteDance WAF detects and blocks curl_cffi TLS impersonation with 403 or captcha
       args.push('--add-header', 'Referer:https://www.tiktok.com/');
@@ -784,6 +790,34 @@ function runDownload({ url, formatId, isAudio, outputFilename, jobId, onProgress
 
     const safeFormat = sanitizeFormatId(formatId);
 
+    // Fast-path: Direct media stream URL or direct format
+    if (isDirectMediaUrl(cleanedUrl) || (safeFormat && safeFormat === 'direct')) {
+      try {
+        if (onProgress) {
+          onProgress({
+            percent: 10,
+            phase: 'video',
+            phaseLabel: 'Direct Stream Download',
+            speed: 'Connecting',
+            eta: 'Fast',
+            transferred: 'Streaming Media File',
+            status: 'downloading'
+          });
+        }
+        const result = await downloadDirectStream({
+          streamUrl: cleanedUrl,
+          outputTemplate,
+          isAudio,
+          jobId: safeJobId,
+          onProgress
+        });
+        return resolve(result);
+      } catch (err) {
+        console.error('[Downloader] Direct stream download error:', err.message);
+        return reject(err);
+      }
+    }
+
     // Fast-path: Direct TikWM format or stream
     if (safeFormat && safeFormat.startsWith('tikwm_')) {
       try {
@@ -832,7 +866,7 @@ function runDownload({ url, formatId, isAudio, outputFilename, jobId, onProgress
 
     if (platform === 'youtube') {
       args.push('--js-runtimes', `node:${process.execPath}`);
-      args.push('--extractor-args', 'youtube:player_client=ios,android,mweb,web');
+      args.push('--extractor-args', 'youtube:player_client=android,ios,tv');
     } else if (platform === 'tiktok') {
       args.push('--add-header', 'Referer:https://www.tiktok.com/');
       args.push('--add-header', 'User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36');
