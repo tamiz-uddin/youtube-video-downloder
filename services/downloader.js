@@ -93,7 +93,7 @@ function identifyPlatform(url) {
   if (!url) return 'generic';
   const u = url.toLowerCase();
   if (u.includes('youtube.com') || u.includes('youtu.be')) return 'youtube';
-  if (u.includes('tiktok.com')) return 'tiktok';
+  if (u.includes('tiktok.com') || u.includes('tiktokv.com')) return 'tiktok';
   if (u.includes('instagram.com')) return 'instagram';
   if (u.includes('twitter.com') || u.includes('x.com')) return 'twitter';
   if (u.includes('reddit.com') || u.includes('redd.it')) return 'reddit';
@@ -187,6 +187,221 @@ function isDirectMediaUrl(url) {
   return u.endsWith('.mp4') || u.endsWith('.webm') || u.endsWith('.mov') || u.endsWith('.m3u8') || u.endsWith('.mp3');
 }
 
+function normalizeTikWmUrl(u) {
+  if (!u) return null;
+  if (u.startsWith('//')) return 'https:' + u;
+  if (u.startsWith('/')) return 'https://www.tikwm.com' + u;
+  return u;
+}
+
+/**
+ * High-reliability TikTok fallback metadata extractor via TikWM API
+ */
+async function extractTikTokViaApi(url) {
+  console.log(`[TikTokFallback] Querying fallback extractor for: ${url}`);
+  const apiUrl = `https://www.tikwm.com/api/?url=${encodeURIComponent(url)}`;
+  const res = await fetch(apiUrl, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+      'Accept': 'application/json'
+    },
+    signal: AbortSignal.timeout(12000)
+  });
+
+  if (!res.ok) {
+    throw new Error(`Fallback API returned HTTP ${res.status}`);
+  }
+
+  const json = await res.json();
+  if (json.code !== 0 || !json.data) {
+    throw new Error(json.msg || 'TikTok fallback extraction returned empty data.');
+  }
+
+  const d = json.data;
+  const formats = [];
+
+  const hdUrl = normalizeTikWmUrl(d.hdplay);
+  const playUrl = normalizeTikWmUrl(d.play);
+  const wmUrl = normalizeTikWmUrl(d.wmplay);
+  const musicUrl = normalizeTikWmUrl(d.music);
+
+  if (hdUrl || playUrl) {
+    formats.push({
+      formatId: 'tikwm_hd',
+      label: 'Best Quality (No Watermark)',
+      resolution: hdUrl ? '1080p HD' : '720p HD',
+      ext: 'mp4',
+      type: 'video',
+      estimatedSize: formatBytes(d.size),
+      rawBytes: d.size || 0,
+      directUrl: hdUrl || playUrl
+    });
+  }
+
+  if (playUrl && hdUrl) {
+    formats.push({
+      formatId: 'tikwm_sd',
+      label: 'Standard Quality (No Watermark)',
+      resolution: '720p SD',
+      ext: 'mp4',
+      type: 'video',
+      estimatedSize: formatBytes(d.size),
+      rawBytes: d.size || 0,
+      directUrl: playUrl
+    });
+  }
+
+  if (wmUrl) {
+    formats.push({
+      formatId: 'tikwm_wm',
+      label: 'With Watermark (Original)',
+      resolution: 'Original',
+      ext: 'mp4',
+      type: 'video',
+      estimatedSize: formatBytes(d.wm_size || d.size),
+      rawBytes: d.wm_size || d.size || 0,
+      directUrl: wmUrl
+    });
+  }
+
+  if (musicUrl) {
+    formats.push({
+      formatId: 'tikwm_audio',
+      label: 'Original Audio Track (MP3)',
+      resolution: 'Original Audio',
+      ext: 'mp3',
+      type: 'audio',
+      estimatedSize: 'Audio Track',
+      rawBytes: 0,
+      directUrl: musicUrl
+    });
+  }
+
+  return {
+    id: d.id || 'tiktok_' + Date.now(),
+    title: (d.title || 'TikTok Video').slice(0, 150),
+    description: (d.title || '').slice(0, 300),
+    thumbnail: normalizeTikWmUrl(d.cover || d.origin_cover || (d.author && d.author.avatar)) || null,
+    duration: d.duration || 0,
+    durationFormatted: formatDuration(d.duration),
+    uploader: d.author ? (d.author.nickname || d.author.unique_id) : 'TikTok Creator',
+    uploaderUrl: d.author && d.author.unique_id ? `https://www.tiktok.com/@${d.author.unique_id}` : null,
+    platform: 'tiktok',
+    views: d.play_count ? d.play_count.toLocaleString() : null,
+    likes: d.digg_count ? d.digg_count.toLocaleString() : null,
+    previewUrl: playUrl || wmUrl || null,
+    formats,
+    originalUrl: url
+  };
+}
+
+/**
+ * Direct HTTP stream downloader with high-speed curl process & live progress
+ */
+function downloadDirectStream({ streamUrl, outputTemplate, isAudio, jobId, onProgress }) {
+  return new Promise((resolve, reject) => {
+    console.log(`[DirectStream] Downloading direct stream with curl to: ${outputTemplate}`);
+
+    const curlArgs = [
+      '-L',
+      '--fail',
+      '--silent',
+      '--show-error',
+      '--retry', '3',
+      '--retry-delay', '1',
+      '-A', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+      '-e', 'https://www.tiktok.com/',
+      '-o', outputTemplate,
+      streamUrl
+    ];
+
+    const proc = spawn('curl', curlArgs, { windowsHide: true });
+    let errorOutput = '';
+    const startTime = Date.now();
+    let lastSize = 0;
+    let lastTime = startTime;
+    let expectedSize = 0;
+
+    // Check progress every 350ms by inspecting output file size
+    const progressTimer = setInterval(() => {
+      try {
+        if (fs.existsSync(outputTemplate)) {
+          const stats = fs.statSync(outputTemplate);
+          const currentSize = stats.size;
+          const now = Date.now();
+          const elapsedSec = (now - lastTime) / 1000;
+          let speedStr = 'Downloading...';
+
+          if (elapsedSec > 0) {
+            const bytesPerSec = (currentSize - lastSize) / elapsedSec;
+            if (bytesPerSec > 0) {
+              speedStr = `${formatBytes(bytesPerSec)}/s`;
+            }
+          }
+          lastSize = currentSize;
+          lastTime = now;
+
+          if (expectedSize <= 0) {
+            expectedSize = Math.max(currentSize, 5 * 1024 * 1024);
+          }
+          const pct = Math.min(98, Math.max(10, Math.round((currentSize / (expectedSize * 1.05)) * 100)));
+
+          if (onProgress) {
+            onProgress({
+              percent: pct,
+              rawPercent: pct,
+              phase: isAudio ? 'audio' : 'video',
+              phaseLabel: isAudio ? 'Downloading Audio Stream' : 'Downloading Media Stream',
+              speed: speedStr,
+              eta: 'Finishing...',
+              transferred: formatBytes(currentSize),
+              size: formatBytes(expectedSize),
+              status: 'downloading'
+            });
+          }
+        }
+      } catch (e) {}
+    }, 350);
+
+    proc.stderr.on('data', (d) => {
+      errorOutput += d.toString();
+    });
+
+    proc.on('close', (code) => {
+      clearInterval(progressTimer);
+      if (code === 0 && fs.existsSync(outputTemplate)) {
+        const finalSize = fs.statSync(outputTemplate).size;
+        if (onProgress) {
+          onProgress({
+            percent: 100,
+            rawPercent: 100,
+            phase: 'muxing',
+            phaseLabel: 'Finalizing Media File',
+            speed: 'Done',
+            eta: 'Complete',
+            transferred: formatBytes(finalSize),
+            size: formatBytes(finalSize),
+            status: 'completed'
+          });
+        }
+        resolve({
+          filePath: outputTemplate,
+          fileName: path.basename(outputTemplate),
+          fileSize: finalSize
+        });
+      } else {
+        clearInterval(progressTimer);
+        reject(new Error(errorOutput || `Curl failed with exit code ${code}`));
+      }
+    });
+
+    proc.on('error', (err) => {
+      clearInterval(progressTimer);
+      reject(err);
+    });
+  });
+}
+
 /**
  * Fetch video metadata using yt-dlp with strict timeout & error handling
  */
@@ -241,10 +456,21 @@ async function getVideoInfo(rawUrl) {
 
     if (platform === 'youtube') {
       args.push('--js-runtimes', `node:${process.execPath}`);
-      args.push('--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+      // Use mobile and mobile-web player clients to bypass YouTube datacenter IP bot verification
+      args.push('--extractor-args', 'youtube:player_client=ios,android,mweb,web');
+    } else if (platform === 'tiktok') {
+      // ByteDance WAF detects and blocks curl_cffi TLS impersonation with 403 or captcha
+      args.push('--add-header', 'Referer:https://www.tiktok.com/');
+      args.push('--add-header', 'User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36');
     } else {
-      // Impersonate modern browser TLS fingerprint for TikTok, Instagram, Twitter
+      // Impersonate modern browser TLS fingerprint for Instagram, Twitter
       args.push('--impersonate', 'chrome');
+    }
+
+    // Support cookies for age-restricted or protected videos
+    const cookiesPath = process.env.YOUTUBE_COOKIES_PATH || path.join(process.cwd(), 'cookies.txt');
+    if (fs.existsSync(cookiesPath)) {
+      args.push('--cookies', cookiesPath);
     }
 
     const proxy = process.env.PROXY_URL || process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
@@ -266,12 +492,24 @@ async function getVideoInfo(rawUrl) {
     }
 
     // Safety timeout: 25 seconds
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
       if (!hasResolved) {
-        hasResolved = true;
         try {
           proc.kill('SIGTERM');
         } catch (e) {}
+
+        if (platform === 'tiktok') {
+          console.log(`[Extractor] Timeout after 25s for TikTok. Attempting TikWM fallback for: ${url}`);
+          try {
+            const fallbackData = await extractTikTokViaApi(url);
+            if (fallbackData) {
+              hasResolved = true;
+              return resolve(fallbackData);
+            }
+          } catch (e) {}
+        }
+
+        hasResolved = true;
         console.error(`[Extractor] Timeout after 25s for: ${url}`);
         reject(new Error('Extraction timed out. The platform may be rate-limiting or the link is private/inaccessible.'));
       }
@@ -285,18 +523,37 @@ async function getVideoInfo(rawUrl) {
       stderr += data.toString();
     });
 
-    proc.on('close', (code) => {
+    proc.on('close', async (code) => {
       if (hasResolved) return;
-      hasResolved = true;
-      clearTimeout(timer);
 
       if (code !== 0 || !stdout.trim()) {
         const cleanErr = (stderr || '').trim();
         console.error(`[Extractor] Extraction error (code ${code}):`, cleanErr);
+
+        if (platform === 'tiktok') {
+          console.log(`[Extractor] yt-dlp encountered an error for TikTok. Activating zero-failure TikWM fallback for: ${url}`);
+          try {
+            const fallbackData = await extractTikTokViaApi(url);
+            if (fallbackData) {
+              hasResolved = true;
+              clearTimeout(timer);
+              return resolve(fallbackData);
+            }
+          } catch (apiErr) {
+            console.warn(`[Extractor] TikTok fallback API also failed: ${apiErr.message}`);
+          }
+        }
+
+        hasResolved = true;
+        clearTimeout(timer);
         
         let userMessage = 'Unable to extract media from this URL.';
-        if (cleanErr.includes('Private video') || cleanErr.includes('Sign in')) {
-          userMessage = 'This video is private, age-restricted, or requires login.';
+        if (cleanErr.includes('Private video')) {
+          userMessage = 'This video is private or removed by the creator.';
+        } else if (cleanErr.includes('Sign in to confirm you’re not a bot') || cleanErr.includes('confirm you’re not a bot')) {
+          userMessage = 'YouTube rate-limited server IP. Try another URL, use the Chrome Extension, or provide a cookies.txt file.';
+        } else if (cleanErr.includes('Sign in') || cleanErr.includes('age')) {
+          userMessage = 'This video is age-restricted or requires login.';
         } else if (cleanErr.includes('blocked from accessing') || cleanErr.includes('HTTP Error 403')) {
           userMessage = 'Platform temporarily rate-limited or blocked direct access. Try another URL or use the Chrome Extension.';
         } else if (cleanErr.includes('Unsupported URL') || cleanErr.includes('is not a valid URL')) {
@@ -307,6 +564,9 @@ async function getVideoInfo(rawUrl) {
 
         return reject(new Error(userMessage));
       }
+
+      hasResolved = true;
+      clearTimeout(timer);
 
       try {
         const data = JSON.parse(stdout);
@@ -449,8 +709,18 @@ async function getVideoInfo(rawUrl) {
       }
     });
 
-    proc.on('error', (err) => {
+    proc.on('error', async (err) => {
       if (hasResolved) return;
+      if (platform === 'tiktok') {
+        try {
+          const fallbackData = await extractTikTokViaApi(url);
+          if (fallbackData) {
+            hasResolved = true;
+            clearTimeout(timer);
+            return resolve(fallbackData);
+          }
+        } catch (e) {}
+      }
       hasResolved = true;
       clearTimeout(timer);
       console.error('[Extractor] Process spawn error:', err.message);
@@ -503,14 +773,51 @@ function runDownload({ url, formatId, isAudio, outputFilename, jobId, onProgress
   const platform = identifyPlatform(cleanedUrl);
   const safeJobId = (jobId || 'job_' + Date.now()).replace(/[^a-zA-Z0-9_-]/g, '');
 
-  return new Promise((resolve, reject) => {
-    const finalExt = isAudio ? (formatId && formatId.includes('mp3') ? 'mp3' : 'm4a') : 'mp4';
+  return new Promise(async (resolve, reject) => {
+    const finalExt = isAudio ? (formatId && (formatId.includes('mp3') || formatId.includes('audio')) ? 'mp3' : 'm4a') : 'mp4';
     const cleanName = (outputFilename || `video_${Date.now()}`)
       .replace(/[/\\?%*:|"<>]/g, '_')
       .slice(0, 60);
 
     // Embed unique jobId directly in file template to eliminate race condition file conflicts
     const outputTemplate = path.join(DOWNLOADS_DIR, `${safeJobId}_${cleanName}.${finalExt}`);
+
+    const safeFormat = sanitizeFormatId(formatId);
+
+    // Fast-path: Direct TikWM format or stream
+    if (safeFormat && safeFormat.startsWith('tikwm_')) {
+      try {
+        if (onProgress) {
+          onProgress({
+            percent: 5,
+            phase: 'resolving',
+            phaseLabel: 'Resolving Direct Stream',
+            speed: 'Connecting',
+            eta: 'Fast',
+            transferred: 'Resolving CDN',
+            status: 'downloading'
+          });
+        }
+        const apiInfo = await extractTikTokViaApi(cleanedUrl);
+        const matched = (apiInfo.formats || []).find(f => f.formatId === safeFormat) || apiInfo.formats[0];
+        const streamUrl = matched ? matched.directUrl : null;
+        if (!streamUrl) {
+          throw new Error('Direct stream URL could not be resolved from TikTok fallback.');
+        }
+
+        const result = await downloadDirectStream({
+          streamUrl,
+          outputTemplate,
+          isAudio,
+          jobId: safeJobId,
+          onProgress
+        });
+        return resolve(result);
+      } catch (err) {
+        console.error('[Downloader] Direct TikTok download error:', err.message);
+        return reject(err);
+      }
+    }
 
     const args = [
       '--no-playlist',
@@ -525,17 +832,23 @@ function runDownload({ url, formatId, isAudio, outputFilename, jobId, onProgress
 
     if (platform === 'youtube') {
       args.push('--js-runtimes', `node:${process.execPath}`);
-      args.push('--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+      args.push('--extractor-args', 'youtube:player_client=ios,android,mweb,web');
+    } else if (platform === 'tiktok') {
+      args.push('--add-header', 'Referer:https://www.tiktok.com/');
+      args.push('--add-header', 'User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36');
     } else {
       args.push('--impersonate', 'chrome');
+    }
+
+    const cookiesPath = process.env.YOUTUBE_COOKIES_PATH || path.join(process.cwd(), 'cookies.txt');
+    if (fs.existsSync(cookiesPath)) {
+      args.push('--cookies', cookiesPath);
     }
 
     const proxy = process.env.PROXY_URL || process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
     if (proxy) {
       args.push('--proxy', proxy);
     }
-
-    const safeFormat = sanitizeFormatId(formatId);
 
     if (isAudio) {
       args.push(
@@ -721,7 +1034,7 @@ function runDownload({ url, formatId, isAudio, outputFilename, jobId, onProgress
       errorOutput += chunk.toString();
     });
 
-    proc.on('close', (code) => {
+    proc.on('close', async (code) => {
       clearTimeout(downloadTimer);
       if (code === 0) {
         if (!resolvedPath || !fs.existsSync(resolvedPath)) {
@@ -742,6 +1055,39 @@ function runDownload({ url, formatId, isAudio, outputFilename, jobId, onProgress
           fileSize: resolvedPath && fs.existsSync(resolvedPath) ? fs.statSync(resolvedPath).size : 0
         });
       } else {
+        if (platform === 'tiktok') {
+          console.warn('[Downloader] yt-dlp failed on TikTok during download. Attempting TikWM auto-recovery...');
+          try {
+            if (onProgress) {
+              onProgress({
+                percent: 8,
+                phase: 'resolving',
+                phaseLabel: 'Auto-Recovering via High-Speed Stream',
+                speed: 'Connecting',
+                eta: 'Recovering',
+                transferred: 'Switching Stream Engine',
+                status: 'downloading'
+              });
+            }
+            const apiInfo = await extractTikTokViaApi(cleanedUrl);
+            const targetFormat = isAudio
+              ? (apiInfo.formats.find(f => f.type === 'audio') || apiInfo.formats[0])
+              : (apiInfo.formats.find(f => f.formatId === 'tikwm_hd') || apiInfo.formats[0]);
+
+            if (targetFormat && targetFormat.directUrl) {
+              const directResult = await downloadDirectStream({
+                streamUrl: targetFormat.directUrl,
+                outputTemplate,
+                isAudio,
+                jobId: safeJobId,
+                onProgress
+              });
+              return resolve(directResult);
+            }
+          } catch (recoveryErr) {
+            console.error('[Downloader] TikTok recovery download failed:', recoveryErr.message);
+          }
+        }
         console.error('[Downloader] Exit code:', code, errorOutput);
         reject(new Error(errorOutput.split('\n')[0] || `Download failed (exit code ${code})`));
       }
